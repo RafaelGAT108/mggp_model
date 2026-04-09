@@ -353,22 +353,21 @@ class MGGP:
             if self.problem_type == 'regression':
                 
                 # self._constrain_phi_functions(ind)
-                # self._apply_froe_pruning(ind)
+                # if np.random.random() < self.pruning_probability:
+                #     self._apply_froe_pruning(ind)
 
                 if self.froe_mode:
                     
-                    # self._constrain_phi_functions(ind)
+                    self._constrain_phi_functions(ind)
         
                     if np.random.random() < self.pruning_probability:
                         self._apply_froe_pruning(ind)
 
-                    theta_value = ind.leastSquares(self.outputs, self.inputs)
+                    theta_value = ind.hysteretic_constrained_ls(self.outputs, self.inputs)
                     ind._theta = theta_value
-                    # theta_value = ind.hysteretic_constrained_ls(self.outputs, self.inputs)
-                    # ind._theta = theta_value
 
-                    # if not self._check_hysteretic_constraints(ind):
-                    #     return (np.inf,)  
+                    if not self._check_hysteretic_constraints(ind):
+                        return (np.inf,)  
         
 
                 else:
@@ -386,8 +385,8 @@ class MGGP:
                 args = (self.outputs, self.inputs) if self.evaluationType != "MShooting" else (self.k, self.outputs, self.inputs)
                 yp, yd = ind.predict(self.evaluationType, *args)
                 error = ind.score(yd, yp, self.evaluationMode)
-                complexity = sum([len(subtree) for tree in ind for subtree in tree])/1000
-                fitness = error + complexity
+                # complexity = sum([len(subtree) for tree in ind for subtree in tree])/1000
+                # fitness = error + complexity
                 return error,
             
             elif self.problem_type == 'classification':
@@ -656,7 +655,7 @@ class MGGP:
             pickle.dump(model_data, f)
 
 
-    def _check_hysteretic_constraints(self, ind):
+    def _check_hysteretic_constraints(self, ind, tol=1e-6):
         """
         Verifica se o modelo atende às restrições de continuum de equilíbrio
         """
@@ -664,15 +663,13 @@ class MGGP:
             clusters = ind.identify_term_clusters(self.outputs, self.inputs)
             theta = ind._theta.flatten()
             
-            # Verifica restrição principal: ∑θ_linear_output ≈ 1
             linear_output_sum = sum(theta[idx] for idx in clusters['linear_output'])
-            if abs(linear_output_sum - 1.0) > 1e-6:
+            if abs(linear_output_sum - 1.0) > tol:
                 return False
                 
-            # Verifica outras restrições ≈ 0
             for cluster_type in ['linear_input', 'cross_terms', 'nonlinear_y', 'nonlinear_u']:
                 cluster_sum = sum(theta[idx] for idx in clusters[cluster_type])
-                if abs(cluster_sum) > 1e-6:
+                if abs(cluster_sum) > tol:
                     return False
                     
             return True
@@ -702,307 +699,64 @@ class MGGP:
         - Substituições subsequentes dentro da mesma φ: q1(u1)
         """
         
-        phi_functions = ['subtraction', 'sign']
-        
-        def get_replacement_terminal(replacement_count):
-            """Retorna o terminal de substituição baseado no contador"""
-            if replacement_count == 0:
-                # Primeira substituição: u1
-                return self.get_terminal_by_name("u1")
-            else:
-                # Substituições subsequentes: q1(u1)
-                # Precisamos criar uma árvore com q1(u1)
-                q1_primitive = None
-                u1_terminal = self.get_terminal_by_name("u1")
-                
-                # Encontra o operador q1 no pset
-                for prim in self.element.pset.primitives[self.element.pset.ret]:
-                    if hasattr(prim, 'name') and prim.name == 'q1':
-                        q1_primitive = prim
-                        break
-                
-                if q1_primitive:
-                    # Cria árvore q1(u1)
-                    return [q1_primitive, u1_terminal]
-                else:
-                    # Fallback para u1 se q1 não existir
-                    return self.get_terminal_by_name("u1")
-        
-        def process_node(tree_list, idx, in_phi=False, replacement_count=0, seen_u_in_current_phi=False):
-            """
-            Processa um nó e retorna o próximo índice a processar.
-            
-            Args:
-                tree_list: Lista de nós
-                idx: Índice atual
-                in_phi: True se estamos dentro de uma função φ
-                replacement_count: Número de substituições já feitas nesta φ
-            """
-            if idx >= len(tree_list):
-                return idx, replacement_count, tree_list, seen_u_in_current_phi
-            
-            node = tree_list[idx]
-            if node is None:
-                return idx + 1, replacement_count, tree_list, seen_u_in_current_phi
-            
-            # Se for uma função φ
-            if hasattr(node, 'name') and node.name in phi_functions:
-                arity = node.arity
-                
-                # Se já estamos dentro de outra φ, substitui por u1 ou q1(u1)
-                if in_phi:
-                    # Encontra o fim da subárvore
-                    aux_tree = gp.PrimitiveTree(tree_list)
-                    subtree_range = aux_tree.searchSubtree(idx)
-                    final_idx = subtree_range.stop
-                    
-                    replacement = get_replacement_terminal(replacement_count)
-                    
-                    if replacement_count == 0:
-                        tree_list[idx] = replacement
-                        for i in range(idx + 1, final_idx):
-                            tree_list[i] = None
-                            
-                    else:
-                        tree_list[idx] = replacement[0]
-                        tree_list = tree_list[:idx+1] + [replacement[1]] + tree_list[idx+1:]
-                        
-                        for i in range(idx + 2, final_idx+1):
-                            tree_list[i] = None
-                    
+        PHI_NAMES = {"subtraction", "sign"}
 
-                    replacement_count += 1
-                    return idx + 1, replacement_count, tree_list, seen_u_in_current_phi  
-                
-                # Não estamos dentro de φ, processa os argumentos (agora dentro de φ)
-                # Inicia novo contador para esta função φ
-                next_idx = idx + 1
-                current_replacement_count = 0
-                
-                # Encontra o fim da subárvore
-                try:
-                    aux_tree = gp.PrimitiveTree(tree_list)
-                    subtree_range = aux_tree.searchSubtree(idx)
-                    final_idx = subtree_range.stop
-                except:
-                    final_idx = len(tree_list)
-                
-                # Processa cada posição dentro desta subárvore
-                while next_idx < final_idx:
-                    next_idx, current_replacement_count, updated_tree_list, updated_seen_u_in_current_phi = process_node(
-                        tree_list, next_idx, True, current_replacement_count, seen_u_in_current_phi
-                    )
+        def _is_q_chain_to_u(tree: gp.PrimitiveTree, idx: int) -> bool:
+            """True se a subárvore em idx é q*(u#) (uma cadeia de q's terminando em u)."""
+            node = tree[idx]
 
-                    tree_list = updated_tree_list
-                    seen_u_in_current_phi = updated_seen_u_in_current_phi
-                
-                return next_idx, replacement_count, tree_list, seen_u_in_current_phi
-            
-            # Se for uma multiplicação
-            elif hasattr(node, 'name') and node.name == 'mul':
-                arity = node.arity
-                
-                # Se dentro de φ, substitui por u1 ou q1(u1)
-                if in_phi:
+            # Terminal precisa ser u#
+            if isinstance(node, gp.Terminal):
+                return isinstance(node.value, str) and node.value.startswith("u")
 
-                    try:
-                        aux_tree = gp.PrimitiveTree(tree_list)
-                        subtree_range = aux_tree.searchSubtree(idx)
-                        final_idx = subtree_range.stop
-                    except:
-                        final_idx = idx + 1 + arity
-                    
-                    replacement = get_replacement_terminal(replacement_count)
-                    
-                    if replacement_count == 0:
-                        tree_list[idx] = replacement
-                        for i in range(idx + 1, final_idx):
-                            tree_list[i] = None
+            # Primitiva precisa ser q*
+            if not isinstance(node, gp.Primitive):
+                return False
+            if not node.name.startswith("q"):
+                return False
+            if node.arity != 1:
+                return False
 
-                    else:
-                        tree_list[idx] = replacement[0]
-                        tree_list = tree_list[:idx+1] + [replacement[1]] + tree_list[idx+1:]
-                        for i in range(idx + 2, final_idx+1):
-                            tree_list[i] = None
-                    
-                    replacement_count += 1
-                    return idx + 1, replacement_count, tree_list, seen_u_in_current_phi
-                
-                # Fora de φ, processa argumentos normalmente
-                next_idx = idx + 1
-                
-                try:
-                    aux_tree = gp.PrimitiveTree(tree_list)
-                    subtree_range = aux_tree.searchSubtree(idx)
-                    final_idx = subtree_range.stop
-                except:
-                    final_idx = len(tree_list)
-                
-                for _ in range(arity):
-                    if next_idx >= final_idx:
-                        break
-                    next_idx, replacement_count, updated_tree_list, updated_seen_u_in_current_phi = process_node(
-                        tree_list, next_idx, False, replacement_count, seen_u_in_current_phi
-                    )
-                    tree_list = updated_tree_list
-                    seen_u_in_current_phi = updated_seen_u_in_current_phi
-                
-                return next_idx, replacement_count, tree_list, seen_u_in_current_phi
-            
-            # Se for um operador q
-            elif hasattr(node, 'name') and node.name.startswith('q'):
-                arity = node.arity  # deve ser 1
-                
-                # Processa o argumento do q
-                next_idx = idx + 1
-                
-                if next_idx < len(tree_list):
-                    # Se dentro de φ, o argumento deve ser u
-                    if in_phi:
-                        arg_node = tree_list[next_idx]
-                        
-                        # Se o argumento for outro q, é permitido
-                        if isinstance(arg_node, gp.Primitive) and arg_node.name.startswith('q'):
-                            # Processa recursivamente mantendo in_phi=True
-                            next_idx, replacement_count, updated_tree_list, updated_seen_u_in_current_phi = process_node(
-                                tree_list, next_idx, True, replacement_count, seen_u_in_current_phi
-                            )
-                            tree_list = updated_tree_list
-                            seen_u_in_current_phi = updated_seen_u_in_current_phi
-                            return next_idx, replacement_count, tree_list, seen_u_in_current_phi
-                        
-                        # Se for terminal que não é u
-                        if isinstance(arg_node, gp.Terminal):
-                            if not (isinstance(arg_node.value, str) and arg_node.value.startswith('u')):
-                                # Encontra fim da subárvore
-                                try:
-                                    aux_tree = gp.PrimitiveTree(tree_list)
-                                    subtree_range = aux_tree.searchSubtree(idx)
-                                    final_idx = subtree_range.stop
-                                except:
-                                    final_idx = idx + 1 + arity
-                                
-                                replacement = get_replacement_terminal(replacement_count)
-                                # TODO: Se a gente tá avaliando o next_idx, pq tá substituindo o idx ?????
-                                if replacement_count == 0:
-                                    tree_list[idx] = replacement
-                                    
-                                    for i in range(idx + 1, final_idx):
-                                        tree_list[i] = None
-                                else:
-                                    tree_list[idx] = replacement[0]
-                                    tree_list = tree_list[:idx+1] + [replacement[1]] + tree_list[idx+1:]
-                                    
-                                    for i in range(idx + 2, final_idx+1):
-                                        tree_list[i] = None
+            # recursivo no único argumento
+            child_idx = idx + 1
+            return _is_q_chain_to_u(tree, child_idx)
 
-                                replacement_count += 1                              
-                                return final_idx, replacement_count, tree_list, seen_u_in_current_phi
+        def _make_q1_u1_tree(pset) -> gp.PrimitiveTree:
+            q1 = next(p for p in pset.primitives[pset.ret] if p.name == "q1")
+            u1 = next(t for t in pset.terminals[pset.ret] if getattr(t, "value", None) == "u1")
+            return gp.PrimitiveTree([q1, u1])
+
+        def constrain_phi_tree(tree: gp.PrimitiveTree, pset) -> gp.PrimitiveTree:
+            """Garante que cada argumento de φ é q*(u#). Se não for, vira q1(u1)."""
+            i = 0
+            repl = _make_q1_u1_tree(pset)
+
+            while i < len(tree):
+                node = tree[i]
+                if isinstance(node, gp.Primitive) and node.name in PHI_NAMES:
+                    # para cada argumento, checar e substituir o slice inteiro se inválido
+                    arg_idx = i + 1
+                    for _ in range(node.arity):
+                        arg_slice = tree.searchSubtree(arg_idx)
+                        if not _is_q_chain_to_u(tree, arg_idx):
+                            tree[arg_slice] = repl
+                            # depois de substituir, o próximo argumento começa logo após o slice inserido
+                            arg_idx = arg_slice.start + len(repl)
                         else:
-                            # Não é terminal nem q, substitui
-                            try:
-                                aux_tree = gp.PrimitiveTree(tree_list)
-                                subtree_range = aux_tree.searchSubtree(idx)
-                                final_idx = subtree_range.stop
-                            except:
-                                final_idx = idx + 1 + arity
-                            
-                            replacement = get_replacement_terminal(replacement_count)
-                            
-                            if replacement_count == 0:
-                                tree_list[next_idx] = replacement
-                                for i in range(next_idx + 1, final_idx):
-                                    tree_list[i] = None
+                            arg_idx = arg_slice.stop
+                i += 1
+            return tree
 
-                            else:
-                                tree_list[next_idx] = replacement[0]
-                                tree_list = tree_list[:next_idx+1] + [replacement[1]] + tree_list[next_idx+1:]
-
-                                for i in range(next_idx + 2, final_idx+1):
-                                    tree_list[i] = None
-
-                            replacement_count += 1                            
-                            return final_idx, replacement_count, tree_list, seen_u_in_current_phi
-                    
-                    # Processa recursivamente (mantém o estado in_phi)
-                    next_idx, replacement_count, updated_tree_list, updated_seen_u_in_current_phi = process_node(
-                        tree_list, next_idx, in_phi, replacement_count, seen_u_in_current_phi
-                    )
-                    tree_list = updated_tree_list
-                    seen_u_in_current_phi = updated_seen_u_in_current_phi
-                
-                return next_idx, replacement_count, tree_list, seen_u_in_current_phi
-            
-            # Se for um terminal
-            elif isinstance(node, gp.Terminal):
-                # Se dentro de φ e não for entrada, substitui por u1 ou q1(u1)
-                if in_phi and not (isinstance(node.value, str) and node.value.startswith('u')):
-                    replacement = get_replacement_terminal(replacement_count)
-                    
-                    if replacement_count == 0:
-                        tree_list[idx] = replacement
-                    else:
-                        tree_list[idx] = replacement[0]
-                        tree_list = tree_list[:idx+1] + [replacement[1]] + tree_list[idx+1:]
-                        
-                
-                # if in_phi and seen_u_in_current_phi:
-                #     # replacement_count = 2
-                #     replacement = get_replacement_terminal(2)
-                #     tree_list[idx] = replacement[0]
-                #     tree_list = tree_list[:idx+1] + [replacement[1]] + tree_list[idx+1:]
-                #     # seen_u_in_current_phi = False
-                #     # for i in range(idx + 2, final_idx+1):
-                #     #     tree_list[i] = None
-                
-                # if in_phi:
-                #     seen_u_in_current_phi = True
-
-                replacement_count += 1
-                return idx + 1, replacement_count, tree_list, seen_u_in_current_phi
-            
-            # Outros nós
-            else:
-                # Se dentro de φ, substitui por u1 ou q1(u1)
-                if in_phi:
-                    replacement = get_replacement_terminal(replacement_count)
-                    
-                    if replacement_count == 0:
-                        tree_list[idx] = replacement
-                    else:
-                        tree_list[idx] = replacement[0]
-                        tree_list = tree_list[:idx+1] + [replacement[1]] + tree_list[idx+1:]
-
-                    replacement_count += 1
-                    return idx + 1, replacement_count, tree_list, seen_u_in_current_phi
-                
-                return idx + 1, replacement_count, tree_list, seen_u_in_current_phi
-        
-        def process_tree(tree):
-            """Processa uma árvore completa"""
-            tree_list = list(tree)
-            idx = 0
-            replacement_count = 0
-            seen_u_in_current_phi = False
-            
-            while idx < len(tree_list):
-                idx, replacement_count, updated_tree_list, updated_seen_u_in_current_phi = process_node(
-                    tree_list, idx, False, replacement_count, seen_u_in_current_phi
-                )
-                tree_list = updated_tree_list
-                seen_u_in_current_phi = updated_seen_u_in_current_phi
-            
-            tree_list = [node for node in tree_list if node is not None]
-            return gp.PrimitiveTree(tree_list)
-        
         if self.mode in ["SISO", "MISO"] or (self.mode == "FIR" and self.nOutputs == 1):
             for i, tree in enumerate(ind):
-                ind[i] = process_tree(tree)
+                # ind[i] = process_tree(tree)
+                ind[i] = constrain_phi_tree(tree, self.element._pset)
 
         else:  # MIMO
             for o in range(len(ind)):
                 for i, tree in enumerate(ind[o]):
-                    ind[o][i] = process_tree(tree)
+                    # ind[o][i] = process_tree(tree)
+                    ind[o][i] = constrain_phi_tree(tree, self.element._pset)
 
     def _is_lagged_input(self, node):
         """Verifica se o nó é uma variável de entrada defasada"""
@@ -1015,9 +769,6 @@ class MGGP:
         """
         Aplica o algoritmo FROE para remover termos com ERR baixo
         """
-        # Reconstrói a matriz de regressores
-        # P = ind.makeRegressors(self.outputs, self.inputs)
-        # yd = self.outputs[ind.lagMax + 1:]
 
         if self.mode == "FIR":
             align = self._fir_align(self.evaluationType)
@@ -1040,35 +791,30 @@ class MGGP:
 
     def _froe_pruning_miso(self, ind, P, yd):
         """FROE para modelos MISO"""
-        n_terms = P.shape[1] - 1  # Exclui o bias
+        n_terms = P.shape[1] - 1 
         
-        # Calcula ERR para cada termo (Equação 6 do artigo)
         err_values = []
-        for j in range(1, n_terms + 1):  # Começa em 1 para pular o bias
-            w_j = P[:, j]  # j-ésimo regressor
-            g_j = np.dot(w_j, yd) / np.dot(w_j, w_j)  # Parâmetro estimado
+        for j in range(1, n_terms + 1): 
+            w_j = P[:, j] 
+            g_j = np.dot(w_j, yd) / np.dot(w_j, w_j)  
             err_j = (g_j**2 * np.sum(w_j**2)) / np.sum(yd**2)  # ERR
             err_values.append((j, err_j))
         
-        # Ordena por ERR e remove termos abaixo da tolerância
         err_values.sort(key=lambda x: x[1], reverse=True)
-        terms_to_keep = [0]  # Sempre mantém o bias
+        terms_to_keep = [0] 
         
         for j, err in err_values:
-            if err >= self.pruning_tolerance:  # Tolerância do artigo (ex: 1e-5)
+            if err >= self.pruning_tolerance:  
                 terms_to_keep.append(j)
             else:
-                # Remove o termo do indivíduo
                 if (j-1) < len(ind):
-                    ind[j-1] = self.element._toolbox._program()  # Substitui por árvore vazia
+                    ind[j-1] = self.element._toolbox._program() 
         
-        # Reconstrói o indivíduo mantendo apenas os termos relevantes
         new_ind = []
         for i in range(len(ind)):
             if i in [x-1 for x in terms_to_keep if x > 0]:
                 new_ind.append(ind[i])
         
-        # Atualiza o indivíduo
         ind[:] = new_ind
 
 

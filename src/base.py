@@ -106,8 +106,8 @@ class Element(object):
         self._pset = gp.PrimitiveSet("main", self._nVar)
         # self._pset.addPrimitive(operator.add, 2, name="add")
         self._pset.addPrimitive(operator.mul, 2)
-        # self._pset.addPrimitive(operator.sub, 2, name="subtraction")
-        # self._pset.addPrimitive(sign, 2, name="sign")
+        self._pset.addPrimitive(operator.sub, 2, name="subtraction")
+        self._pset.addPrimitive(sign, 2, name="sign")
 
         # for i, roll in zip(self._delays, delays):
         #     self._pset.addPrimitive(roll, 1, name=f'q{i}')
@@ -317,7 +317,7 @@ class Individual(list):
         self._terminals = ''
         self._nTerms = 0
         self._logistic_model = None  # modelo de regressão logística
-        self._label_binarizer = None  # para transformar labels
+        self._label_binarizer = None  
         
 
     @property
@@ -359,14 +359,12 @@ class Individual(list):
             self._theta = theta_ls
             return self._theta
         
-        # Aplica restrições CLS (equação 4 do artigo)
         S = constraints['S']  # Matriz de restrições
         c = constraints['c']  # Vetor de restrições
         
         pT_p = p.T @ p
-        pT_p_inv = np.linalg.pinv(pT_p)  # (ΨᵀΨ)⁻¹
+        pT_p_inv = np.linalg.pinv(pT_p)  
         
-        # CLS: θ_CLS = θ_LS - (ΨᵀΨ)⁻¹Sᵀ[S(ΨᵀΨ)⁻¹Sᵀ]⁻¹(Sθ_LS - c)
         term1 = pT_p_inv @ S.T
         term2 = np.linalg.pinv(S @ pT_p_inv @ S.T)
         term3 = S @ theta_ls - c
@@ -378,33 +376,97 @@ class Individual(list):
     
 
     def identify_term_clusters(self, y, u):
-        """
-        Identifica automaticamente os clusters de termos conforme seção 3 do artigo
-        Retorna: dicionário com {cluster_type: [indices_dos_termos]}
+        """Identify regressor term clusters used by the hysteretic constraints (Property 1).
+
+        The paper groups parameters into clusters and enforces:
+        - sum of *linear output* parameters = 1
+        - sum of all other (non-ϕ) clusters = 0
+        - terms containing ϕ-functions are ignored in steady-state constraints
+
+        Important: `makeRegressors` in this codebase includes a leading bias column of ones.
+        The paper's model form (Eq. 10) has no explicit intercept. If we keep a bias term,
+        to preserve a *continuum of equilibria* we must constrain its parameter to 0.
         """
         p = self.makeRegressors(y, u)
-        n_terms = len(p)
-        # try:
-        #     n_terms = p.shape[1]
-        # except:
-        #     n_terms = 1
-        
+        if not isinstance(p, np.ndarray):
+            raise TypeError(
+                "identify_term_clusters currently supports scalar-output regressors matrices (SISO/MISO/FIR). "
+                "For MIMO, run this per-output (one Ψ per output) or refactor makeRegressors accordingly."
+            )
+
+        n_terms = p.shape[1]
+
         clusters = {
-            'linear_output': [],    # Termos lineares de saída (∑θ_y = 1)
-            'linear_input': [],     # Termos lineares de entrada (∑θ_u = 0)  
-            'nonlinear_y': [],      # Termos não-lineares de saída (∑θ_y² = 0)
-            'nonlinear_u': [],      # Termos não-lineares de entrada (∑θ_u² = 0)
-            'cross_terms': [],      # Termos cruzados yu (∑θ_yu = 0)
-            'phi_terms': []         # Termos com funções φ (sem restrição em steady-state)
+            "bias": [],
+            "linear_output": [],
+            "linear_input": [],
+            "nonlinear_y": [],
+            "nonlinear_u": [],
+            "cross_terms": [],
+            "phi_terms": [],
         }
-        
-        # Analisa cada termo para classificar
-        for i in range(n_terms):
-            term_type = self._classify_term(i)
-            clusters[term_type].append(i)
-            
+
+        for term_index in range(n_terms):
+            clusters[self._classify_term(term_index)].append(term_index)
+
         return clusters
 
+    @staticmethod
+    def _node_is_q(node) -> bool:
+        return isinstance(node, gp.Primitive) and re.fullmatch(r"q\d+", getattr(node, "name", "")) is not None
+
+    @staticmethod
+    def _node_is_phi(node) -> bool:
+        return isinstance(node, gp.Primitive) and getattr(node, "name", "") in ("subtraction", "sign")
+
+    @staticmethod
+    def _terminal_value_str(term) -> str:
+        v = getattr(term, "value", None)
+        if v is None:
+            v = getattr(term, "name", "")
+        return str(v)
+
+    def _tree_contains_var(self, tree, var_prefix: str) -> bool:
+        for node in tree:
+            if isinstance(node, gp.Terminal) and self._terminal_value_str(node).startswith(var_prefix):
+                return True
+        return False
+
+    def _tree_has_only_q_and_var(self, tree, var_prefix: str, require_at_least_one_q: bool = True) -> bool:
+        q_count = 0
+        term_count = 0
+
+        for node in tree:
+            if isinstance(node, gp.Primitive):
+                if self._node_is_q(node):
+                    q_count += 1
+                else:
+                    return False
+            elif isinstance(node, gp.Terminal):
+                term_count += 1
+                if not self._terminal_value_str(node).startswith(var_prefix):
+                    return False
+            else:
+                return False
+
+        if term_count != 1:
+            return False
+        if require_at_least_one_q and q_count == 0:
+            return False
+        return True
+
+    def _is_linear_term(self, tree_str: str = None, tree=None) -> bool:
+        """Backward-compatible linearity check.
+
+        A term is considered linear (for clustering) if it is a pure delay chain of one variable:
+        q*(y) or q*(u). Any other primitive makes it nonlinear.
+        """
+        if tree is None:
+            return False
+        return (
+            self._tree_has_only_q_and_var(tree, "y", require_at_least_one_q=True)
+            or self._tree_has_only_q_and_var(tree, "u", require_at_least_one_q=True)
+        )
 
     def _classify_term(self, term_index):
         """
@@ -446,68 +508,47 @@ class Individual(list):
         return not any(op in tree_str for op in non_linear_ops)
     
 
-    def hysteretic_constrained_ls(self, y, u):
+    def hysteretic_constrained_ls(self, y, u, tol=1e-8):
+        """Constrained LS enforcing the hysteretic equilibrium conditions (Property 1).
+
+        Enforced constraints (paper Section 3):
+        - sum(theta_linear_output) = 1
+        - sum(theta_cluster) = 0 for all other non-ϕ clusters
+
+        Additionally (because this codebase includes a bias term):
+        - theta_bias = 0
         """
-        CLS específico para sistemas histéricos conforme seção 3 do artigo
-        Aplica as restrições: ∑θ_y = 1, ∑θ_u = 0, ∑θ_y² = 0, ∑θ_yu = 0, etc.
-        """
-        # Identifica os clusters de termos
         clusters = self.identify_term_clusters(y, u)
-        n_terms = len(self.makeRegressors(y, u))
-        # Prepara as restrições lineares Sθ = c
-        # try:
-            
-        #     n_terms = self.makeRegressors(y, u).shape[1]
-        # except:
-        #     n_terms = 1
 
         constraints = []
-        
-        # Restrição 1: ∑θ_linear_output = 1 (equilíbrio)
-        if clusters['linear_output']:
-            constraint_vec = np.zeros(n_terms)
-            for idx in clusters['linear_output']:
-                constraint_vec[idx] = 1
-            constraints.append((constraint_vec, 1.0))  # Sθ = 1
-        
-        # Restrição 2: ∑θ_linear_input = 0
-        if clusters['linear_input']:
-            constraint_vec = np.zeros(n_terms)
-            for idx in clusters['linear_input']:
-                constraint_vec[idx] = 1
-            constraints.append((constraint_vec, 0.0))  # Sθ = 0
-        
-        # Restrição 3: ∑θ_cross_terms = 0  
-        if clusters['cross_terms']:
-            constraint_vec = np.zeros(n_terms)
-            for idx in clusters['cross_terms']:
-                constraint_vec[idx] = 1
-            constraints.append((constraint_vec, 0.0))  # Sθ = 0
-        
-        # Restrição 4: ∑θ_nonlinear_y = 0
-        if clusters['nonlinear_y']:
-            constraint_vec = np.zeros(n_terms)
-            for idx in clusters['nonlinear_y']:
-                constraint_vec[idx] = 1
-            constraints.append((constraint_vec, 0.0))  # Sθ = 0
-        
-        # Restrição 5: ∑θ_nonlinear_u = 0
-        if clusters['nonlinear_u']:
-            constraint_vec = np.zeros(n_terms)
-            for idx in clusters['nonlinear_u']:
-                constraint_vec[idx] = 1
-            constraints.append((constraint_vec, 0.0))  # Sθ = 0
-        
-        if not constraints:
-            # Se não há restrições, usa LS normal
-            return self.leastSquares(y, u)
-        
-        # Constrói matriz S e vetor c
-        S = np.array([c[0] for c in constraints])
+
+        # Bias must be zero to avoid fixing the equilibrium point.
+        # if clusters["bias"]:
+        #     s = np.zeros(self.makeRegressors(y, u).shape[1])
+        #     s[clusters["bias"]] = 1.0
+        #     constraints.append((s, 0.0))
+
+        if not clusters["linear_output"]:
+            raise ValueError(
+                "No linear output term (pure delay of y) found. Property-1 constraints cannot be enforced."
+            )
+
+        s = np.zeros(self.makeRegressors(y, u).shape[1])
+        s[clusters["linear_output"]] = 1.0
+        constraints.append((s, 1.0))
+
+        for cluster_name in ("linear_input", "cross_terms", "nonlinear_y", "nonlinear_u"):
+            idxs = clusters[cluster_name]
+            if not idxs:
+                continue
+            s = np.zeros(self.makeRegressors(y, u).shape[1])
+            s[idxs] = 1.0
+            constraints.append((s, 0.0))
+
+        S = np.vstack([c[0] for c in constraints])
         c = np.array([c[1] for c in constraints])
-        
-        # Aplica CLS
-        return self.constrained_least_squares(y, u, {'S': S, 'c': c})
+
+        return self.constrained_least_squares(y, u, {"S": S, "c": c})
 
 
     def predict_proba(self, mode="INSTANT", *args):
