@@ -23,9 +23,9 @@ This is the first functional version of the project. It provides a solid foundat
 
 Check out the example notebook to get started:
 
-📓 **`01_MGGP_train.ipynb`** - Demonstrates how to configure and use MGGP for:
-- Regression problems
-- Classification problems
+📓 **`01_MGGP_Regression.ipynb`** - Demonstrates how to configure and use MGGP for Regression problems, and
+
+📓 **`01_MGGP_Classifier.ipynb`** - Demonstrates how to configure and use MGGP for Classification problems.
 
 ## 📋 Requirements
 
