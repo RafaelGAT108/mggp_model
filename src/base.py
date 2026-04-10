@@ -106,8 +106,8 @@ class Element(object):
         self._pset = gp.PrimitiveSet("main", self._nVar)
         # self._pset.addPrimitive(operator.add, 2, name="add")
         self._pset.addPrimitive(operator.mul, 2)
-        self._pset.addPrimitive(operator.sub, 2, name="subtraction")
-        self._pset.addPrimitive(sign, 2, name="sign")
+        # self._pset.addPrimitive(operator.sub, 2, name="subtraction")
+        # self._pset.addPrimitive(sign, 2, name="sign")
 
         # for i, roll in zip(self._delays, delays):
         #     self._pset.addPrimitive(roll, 1, name=f'q{i}')
@@ -568,12 +568,12 @@ class Individual(list):
         
         if mode == "INSTANT":
             X_regressors, y_true = mimo_CLASSIFY(self, *args)
-            y_true = y_true[:len(y_true)-1] # para a classificação FIR precisa desse termo. Já para a MIMO não.
+            # y_true = y_true[:len(y_true)-1] # para a classificação FIR precisa desse termo. Já para a MIMO não.
         # elif mode == "FreeRun":
         #     X_regressors, y_true = mimo_FreeRun(self, *args)
         
-        # elif mode == "MShooting":
-        #     X_regressors, y_true = mimo_MShooting(self, *args)
+        elif mode == "MShooting":
+            X_regressors, y_true = mimo_MShooting(self, *args)
         
         else:
             raise Exception("Choose a mode between: INSTANT")

@@ -108,40 +108,6 @@ def miso_FreeRun(ind, y0, u):
     return np.nan_to_num(y[:-1], nan=0), np.nan_to_num(y0, nan=0)
 
 
-# def mimo_FreeRun(ind, y0, u):
-#     """
-#     Implements the Free-Run predictor for MIMO models
-#     Arguments:
-#         ind = C_Individual object
-#         y0  = n-dimensional array with initial conditions
-#         u   = m-dimensional array with input data
-#     """
-#     if len(u.shape) == 1:
-#         u = u.reshape(-1, 1)
-
-#     y = y0[:, :ind.lagMax + 1]
-
-#     for i in tqdm(range(u.shape[0] - ind.lagMax), desc="Processing iterations"):
-#         listV = []
-#         for v in y.T:
-#             listV.append(v[i:i + ind.lagMax + 1].reshape(-1, 1))
-#         for v in u.T:
-#             listV.append(v[i:i + ind.lagMax + 1].reshape(-1, 1))
-
-#         aux = []
-#         for o in range(len(ind)):
-#             p = [np.ones((ind.lagMax + 1))]
-#             for i in range(len(ind[o])):
-#                 func = ind._funcs[o][i]
-#                 out = func(*listV)
-#                 p.append(out.reshape(-1))
-#             p = np.array(p).T[ind.lagMax:]
-#             aux.append(np.dot(p, ind._theta[o].T))
-
-#         y = np.vstack([y, np.array(aux).reshape(1, -1)])
-
-#     return y[-(y0.shape[0] + 1):-1], y0
-
 def mimo_FreeRun(ind, y0, u):
     """
     Implements the Free-Run predictor for MIMO models.
@@ -239,46 +205,6 @@ def mimo_FIR_FreeRun(ind, y0, u):
 
     y_true = y0[ind.lagMax:, :]
     return y_pred, y_true
-
-# def compute_iteration(*args):
-#     from src.base import Individual
-#     i, ind, u, y = args
-#     listV = []
-#     for v in y.T:
-#         listV.append(v[i:i + ind.lagMax + 1].reshape(-1, 1))
-#     for v in u.T:
-#         listV.append(v[i:i + ind.lagMax + 1].reshape(-1, 1))
-
-#     aux = []
-#     for o in range(len(ind)):
-#         p = [np.ones((ind.lagMax + 1))]
-#         for j in range(len(ind[o])):
-#             func = ind._funcs[o][j]
-#             out = func(*listV)
-#             p.append(out.reshape(-1))
-#         p = np.array(p).T[ind.lagMax:]
-#         aux.append(np.dot(p, ind._theta[o].T))
-#     return np.array(aux).reshape(1, -1)
-
-# def mimo_FreeRun(ind, y0, u):
-#     if len(u.shape) == 1:
-#         u = u.reshape(-1, 1)
-
-#     y = y0[:, :ind.lagMax + 1]
-
-#     # results = Parallel(n_jobs=14, backend="threading")(
-#     #     delayed(compute_iteration)(i, ind, u, y) for i in
-#     #     tqdm(range(u.shape[0] - ind.lagMax), desc="Processing FreeRun iterations", total=(u.shape[0] - ind.lagMax))
-#     # )
-
-#     results = Parallel(n_jobs=14, backend="threading")(
-#         delayed(compute_iteration)(i, ind, u, y) for i in
-#         range(u.shape[0] - ind.lagMax)
-#     )
-
-#     for result in results:
-#         y = np.vstack([y, result])
-#     return y[-(y0.shape[0] + 1):-1], y0
 
 
 def miso_MShooting(ind, k, y, u):
