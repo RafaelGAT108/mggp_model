@@ -121,7 +121,8 @@ class MGGP:
                                nTerms=self.nTerms,
                                maxHeight=self.maxHeight,
                                mode=self.mode,
-                               single_delay_only=self.single_delay_only)
+                               single_delay_only=self.single_delay_only,
+                               operators=kwargs.get('operators', None))
 
         self.element.renameArguments(self.buildArgumentsDict())
 
@@ -316,10 +317,11 @@ class MGGP:
                 model.leastSquares, self.outputs, self.inputs, align=align
             )
         else:
-            # theta_value = model.leastSquares(self.outputs, self.inputs)
-            theta_value = model.hysteretic_constrained_ls(self.outputs, self.inputs)
+            if ['sign'] in self.element.operators: 
+                theta_value = model.hysteretic_constrained_ls(self.outputs, self.inputs)
+            else:
+                theta_value = model.leastSquares(self.outputs, self.inputs)
 
-        # theta_value = model.leastSquares(self.outputs, self.inputs)
         model._theta = list(theta_value)
         
         self.save_model(model)
@@ -362,8 +364,8 @@ class MGGP:
                     
                     self._constrain_phi_functions(ind)
         
-                    if np.random.random() < self.pruning_probability:
-                        self._apply_froe_pruning(ind)
+                    # if np.random.random() < self.pruning_probability:
+                    #     self._apply_froe_pruning(ind)
 
                     theta_value = ind.hysteretic_constrained_ls(self.outputs, self.inputs)
                     ind._theta = theta_value
@@ -492,8 +494,11 @@ class MGGP:
         else:
             if self.problem_type == "classification":
                 model._logistic_model = True
-            # theta_value = model.leastSquares(self.outputs, self.inputs)
-            theta_value = model.hysteretic_constrained_ls(self.outputs, self.inputs)
+            
+            if ['sign'] in self.element.operators: 
+                theta_value = model.hysteretic_constrained_ls(self.outputs, self.inputs)
+            else:
+                theta_value = model.leastSquares(self.outputs, self.inputs)
 
         # theta_value = model.leastSquares(self.outputs, self.inputs)
         model._theta = list(theta_value)
@@ -626,7 +631,8 @@ class MGGP:
             nOutputs=model_data['nOutputs'],
             nTerms=model_data['nTerms'],
             maxHeight=model_data['maxHeight'],
-            mode=self.mode
+            mode=self.mode,
+            kwargs={'operators': model_data.get('operators', None)}
         )
         element.renameArguments(model_data['arguments'])
         
@@ -654,14 +660,15 @@ class MGGP:
             'nTerms': self.nTerms,
             'maxHeight': self.maxHeight,
             'nDelays': self.nDelays,
-            'arguments': self.buildArgumentsDict()
+            'arguments': self.buildArgumentsDict(),
+            'operators': self.element.operators if hasattr(self.element, 'operators') else None
         }
         
         with open(self.filename, 'wb') as f:
             pickle.dump(model_data, f)
 
 
-    def _check_hysteretic_constraints(self, ind, tol=1e-6):
+    def _check_hysteretic_constraints(self, ind, tol=1e-10):
         """
         Verifica se o modelo atende às restrições de continuum de equilíbrio
         """
@@ -673,10 +680,14 @@ class MGGP:
             if abs(linear_output_sum - 1.0) > tol:
                 return False
                 
-            for cluster_type in ['linear_input', 'cross_terms', 'nonlinear_y', 'nonlinear_u']:
+            for cluster_type in ['linear_input', 'cross_terms', 'nonlinear_y', 'nonlinear_u', 'phi_terms']:
                 cluster_sum = sum(theta[idx] for idx in clusters[cluster_type])
                 if abs(cluster_sum) > tol:
                     return False
+                
+            cluster_sum = sum(theta[idx] for idx in clusters['phi_terms'])
+            if abs(cluster_sum - 0.1) > tol:
+                return False
                     
             return True
         except:

@@ -44,7 +44,8 @@ class Element(object):
                  nTerms: int = 10,
                  maxHeight: int = 5,
                  mode="MISO",
-                 single_delay_only: bool = False):
+                 single_delay_only: bool = False,
+                 operators=['mul'],):
         
         self._pset: gp.PrimitiveSet = None
         self._toolbox: base.Toolbox = None
@@ -74,6 +75,14 @@ class Element(object):
         self._nTerms = nTerms
         self._nOutputs = nOutputs
         self._maxHeight = maxHeight
+
+        self.operators = operators
+        self.primitives_sets = {
+            "mul": (operator.mul, 2),
+            "sign": (sign, 2),
+            "subtraction": (operator.sub, 2),
+            "add": (operator.add, 2),
+        }
         
 
         creator.create("Program", gp.PrimitiveTree, fitness=None,
@@ -101,16 +110,17 @@ class Element(object):
         return self._mode
 
     def iniciatePrimitivesSets(self):
-        # delays = [partial(_roll, i=i) for i in self._delays]
         
         self._pset = gp.PrimitiveSet("main", self._nVar)
-        # self._pset.addPrimitive(operator.add, 2, name="add")
-        self._pset.addPrimitive(operator.mul, 2)
-        # self._pset.addPrimitive(operator.sub, 2, name="subtraction")
-        # self._pset.addPrimitive(sign, 2, name="sign")
 
-        # for i, roll in zip(self._delays, delays):
-        #     self._pset.addPrimitive(roll, 1, name=f'q{i}')
+        for operator in self.operators:
+
+            if operator in self.primitives_sets:
+                func, arity = self.primitives_sets[operator]
+                self._pset.addPrimitive(func, arity, name=operator)
+            
+            else:
+                raise ValueError(f"Operator '{operator}' is not defined in primitives_sets.")
 
         if not self._single_delay_only:
             delays = [partial(_roll, i=i) for i in self._delays]
@@ -348,9 +358,9 @@ class Individual(list):
         pass
 
 
-    def constrained_least_squares(self, y, u, constraints=None):
+    def constrained_least_squares(self, y, u, p, constraints=None):
                
-        p = self.makeRegressors(y, u)
+        # p = self.makeRegressors(y, u)
         yd = y[self.lagMax + 1:]
         
         theta_ls = np.linalg.lstsq(p, yd, rcond=None)[0]
@@ -360,7 +370,7 @@ class Individual(list):
             return self._theta
         
         S = constraints['S']  # Matriz de restrições
-        c = constraints['c']  # Vetor de restrições
+        c = constraints['c'].reshape(-1, 1)  # Vetor de restrições
         
         pT_p = p.T @ p
         pT_p_inv = np.linalg.pinv(pT_p)  
@@ -397,7 +407,7 @@ class Individual(list):
         n_terms = p.shape[1]
 
         clusters = {
-            "bias": [],
+            "bias": [],  # Assuming the first column is the bias term (intercept)
             "linear_output": [],
             "linear_input": [],
             "nonlinear_y": [],
@@ -473,7 +483,8 @@ class Individual(list):
         Classifica um termo baseado em sua estrutura
         """
         if term_index == 0:
-            return 'linear_output'  # Bias term
+            # return 'linear_output'  # Bias term
+            return 'bias'  # Bias term
         
         # Para MISO/FIR
         if hasattr(self, '_funcs') and len(self._funcs) > term_index - 1:
@@ -522,12 +533,13 @@ class Individual(list):
         clusters = self.identify_term_clusters(y, u)
 
         constraints = []
-        length_model = self.makeRegressors(y, u).shape[1]
+        p = self.makeRegressors(y, u)
+        length_model = p.shape[1]
         # Bias must be zero to avoid fixing the equilibrium point.
-        # if clusters["bias"]:
-        #     s = np.zeros(length_model)
-        #     s[clusters["bias"]] = 1.0
-        #     constraints.append((s, 0.0))
+        if clusters["bias"]:
+            s = np.zeros(length_model)
+            s[clusters["bias"]] = 1.0
+            constraints.append((s, 0.0))
 
         if not clusters["linear_output"]:
             raise ValueError(
@@ -538,7 +550,7 @@ class Individual(list):
         s[clusters["linear_output"]] = 1.0
         constraints.append((s, 1.0))
 
-        for cluster_name in ("linear_input", "cross_terms", "nonlinear_y", "nonlinear_u"):
+        for cluster_name in ("linear_input", "cross_terms", "nonlinear_y", "nonlinear_u", 'phi_terms'):
             idxs = clusters[cluster_name]
             if not idxs:
                 continue
@@ -549,7 +561,7 @@ class Individual(list):
         S = np.vstack([c[0] for c in constraints])
         c = np.array([c[1] for c in constraints])
 
-        return self.constrained_least_squares(y, u, {"S": S, "c": c})
+        return self.constrained_least_squares(y, u,p, {"S": S, "c": c})
 
 
     def predict_proba(self, mode="INSTANT", *args):
