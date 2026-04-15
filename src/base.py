@@ -805,6 +805,44 @@ class IndividualMISO(Individual):
         else:
             raise Exception("Choose a mode between: OSA, FreeRun, MShooting")
 
+    # def predict_proba(self, mode="INSTANT", *args):
+    #     """Predição de probabilidades para classificação"""
+    #     def one_hot_argmax(x):
+
+    #         result = np.zeros_like(x)
+    #         result[np.argmax(x)] = 1
+            
+    #         return result
+
+    #     def softmax(x):
+    #         """Calcula softmax para cada linha do vetor de entrada x."""
+    #         # Subtrair o máximo melhora a estabilidade numérica (evita overflow)
+    #         e_x = np.exp(x - np.max(x))
+    #         return e_x / e_x.sum()
+        
+    #     if mode == "INSTANT":
+    #         X_regressors, y_true = miso_CLASSIFY(self, *args)
+    #         # y_true = y_true[:len(y_true)-1] # para a classificação FIR precisa desse termo. Já para a MIMO não.
+    #     # elif mode == "FreeRun":
+    #     #     X_regressors, y_true = mimo_FreeRun(self, *args)
+        
+    #     elif mode == "MShooting":
+    #         X_regressors, y_true = miso_MShooting(self, *args)
+        
+    #     else:
+    #         raise Exception("Choose a mode between: INSTANT")
+        
+    #     if self._logistic_model is not None:            
+    #         # probabilities = np.array([one_hot_argmax(x) for x in X_regressors])
+    #         pred_one_hot_encode = np.array([one_hot_argmax(softmax(x)) for x in X_regressors])
+    #         # pred_labels = np.array([np.argmax(prob) for prob in pred_one_hot_encode]).astype(np.float64)
+    #         return pred_one_hot_encode, y_true
+        
+    #     else:
+    #         raise Exception("Logistic regression model not trained!")
+
+
+
     def makeRegressors(self, y, u):
         if len(y.shape) == 1:
             y = y.reshape(-1, 1)
