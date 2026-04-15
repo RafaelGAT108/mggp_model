@@ -231,7 +231,8 @@ class MGGP:
             self._pop = self.element._toolbox.population(self.populationSize)
         else:
             self._pop = self.element._toolbox.population(self.populationSize - len(seed))
-            self._pop += seed
+            # self._pop += seed
+            self._pop.extend([seed])
         invalid_ind = [ind for ind in self._pop if not ind.fitness.valid]
 
         if self.evaluationType == 'OSA':
@@ -315,7 +316,8 @@ class MGGP:
                 model.leastSquares, self.outputs, self.inputs, align=align
             )
         else:
-            theta_value = model.leastSquares(self.outputs, self.inputs)
+            # theta_value = model.leastSquares(self.outputs, self.inputs)
+            theta_value = model.hysteretic_constrained_ls(self.outputs, self.inputs)
 
         # theta_value = model.leastSquares(self.outputs, self.inputs)
         model._theta = list(theta_value)
@@ -369,7 +371,6 @@ class MGGP:
                     if not self._check_hysteretic_constraints(ind):
                         return (np.inf,)  
         
-
                 else:
                     # theta_value = ind.leastSquares(self.outputs, self.inputs)
                     if self.mode == "FIR":
@@ -468,16 +469,16 @@ class MGGP:
 
             #     err_stop_before = err_stop_current
             
-            if (err_stop_before - err_stop_current) < 0.0001:
-                counts_err +=1
+        #    if (err_stop_before - err_stop_current) < 0.0001:
+        #        counts_err +=1
                 
-                if counts_err == 20:
+        #        if counts_err == 20:
                     # EarlyStop: Se depois de 20 épocas não teve melhoria significativa, interrompe o treinamento
-                    break
-            else:
-                counts_err = 0
+        #            break
+        #    else:
+        #        counts_err = 0
             
-            err_stop_before = err_stop_current
+        #    err_stop_before = err_stop_current
 
 
         model = self._hof[0]
@@ -491,7 +492,8 @@ class MGGP:
         else:
             if self.problem_type == "classification":
                 model._logistic_model = True
-            theta_value = model.leastSquares(self.outputs, self.inputs)
+            # theta_value = model.leastSquares(self.outputs, self.inputs)
+            theta_value = model.hysteretic_constrained_ls(self.outputs, self.inputs)
 
         # theta_value = model.leastSquares(self.outputs, self.inputs)
         model._theta = list(theta_value)
@@ -600,7 +602,7 @@ class MGGP:
         return '\n'.join(simplified)
     
     
-    def load_model(self):
+    def load_model(self, path = None):
         """
         Load a saved model to use as seed
         Args:
@@ -609,9 +611,13 @@ class MGGP:
             A model instance ready to be used as seed
         """
         import pickle
-        with open(self.filename, 'rb') as f:
-            model_data = pickle.load(f)
-        
+        if path is None:
+            with open(self.filename, 'rb') as f:
+                model_data = pickle.load(f)
+        else:
+            with open(path, 'rb') as f:
+                model_data = pickle.load(f)
+
         # Create the element with the same parameters
         element = Element(
             weights=(-1,),
@@ -661,7 +667,7 @@ class MGGP:
         """
         try:
             clusters = ind.identify_term_clusters(self.outputs, self.inputs)
-            theta = ind._theta.flatten()
+            theta = np.asarray(ind._theta).flatten()
             
             linear_output_sum = sum(theta[idx] for idx in clusters['linear_output'])
             if abs(linear_output_sum - 1.0) > tol:
@@ -722,6 +728,12 @@ class MGGP:
             return _is_q_chain_to_u(tree, child_idx)
 
         def _make_q1_u1_tree(pset) -> gp.PrimitiveTree:
+            q2 = next(p for p in pset.primitives[pset.ret] if p.name == "q2")
+            u1 = next(t for t in pset.terminals[pset.ret] if getattr(t, "value", None) == "u1")
+            return gp.PrimitiveTree([q2, u1])
+        
+        
+        def _make_u1_tree(pset) -> gp.PrimitiveTree:
             q1 = next(p for p in pset.primitives[pset.ret] if p.name == "q1")
             u1 = next(t for t in pset.terminals[pset.ret] if getattr(t, "value", None) == "u1")
             return gp.PrimitiveTree([q1, u1])
@@ -730,18 +742,27 @@ class MGGP:
             """Garante que cada argumento de φ é q*(u#). Se não for, vira q1(u1)."""
             i = 0
             repl = _make_q1_u1_tree(pset)
+            rep_u1 = _make_u1_tree(pset)
 
             while i < len(tree):
                 node = tree[i]
                 if isinstance(node, gp.Primitive) and node.name in PHI_NAMES:
                     # para cada argumento, checar e substituir o slice inteiro se inválido
                     arg_idx = i + 1
+                    first_substitution = True
                     for _ in range(node.arity):
                         arg_slice = tree.searchSubtree(arg_idx)
                         if not _is_q_chain_to_u(tree, arg_idx):
-                            tree[arg_slice] = repl
-                            # depois de substituir, o próximo argumento começa logo após o slice inserido
-                            arg_idx = arg_slice.start + len(repl)
+                            if first_substitution:
+                                tree[arg_slice] = rep_u1
+                                first_substitution = False
+
+                                arg_idx = arg_slice.start + len(rep_u1)
+                            else:
+                                tree[arg_slice] = repl
+                                
+                                # depois de substituir, o próximo argumento começa logo após o slice inserido
+                                arg_idx = arg_slice.start + len(repl)
                         else:
                             arg_idx = arg_slice.stop
                 i += 1

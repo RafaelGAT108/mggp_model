@@ -480,7 +480,8 @@ class Individual(list):
             tree_str = str(self[term_index - 1]).lower()
             
             # Verifica se contém funções φ
-            if 'subtraction' in tree_str or 'greater' in tree_str or 'less' in tree_str:
+            # if 'subtraction' in tree_str or 'greater' in tree_str or 'less' in tree_str:
+            if 'subtraction' in tree_str or 'sign' in tree_str:
                 return 'phi_terms'
             
             # Classifica baseado nas variáveis presentes
@@ -504,7 +505,7 @@ class Individual(list):
 
     def _is_linear_term(self, tree_str):
         """Verifica se o termo é linear (apenas multiplicações básicas)"""
-        non_linear_ops = ['sign', 'subtraction', 'mul(mul', 'mul(q']
+        non_linear_ops = ['sign', 'subtraction', 'mul(mul', 'mul(q', 'mul(']
         return not any(op in tree_str for op in non_linear_ops)
     
 
@@ -521,10 +522,10 @@ class Individual(list):
         clusters = self.identify_term_clusters(y, u)
 
         constraints = []
-
+        length_model = self.makeRegressors(y, u).shape[1]
         # Bias must be zero to avoid fixing the equilibrium point.
         # if clusters["bias"]:
-        #     s = np.zeros(self.makeRegressors(y, u).shape[1])
+        #     s = np.zeros(length_model)
         #     s[clusters["bias"]] = 1.0
         #     constraints.append((s, 0.0))
 
@@ -533,7 +534,7 @@ class Individual(list):
                 "No linear output term (pure delay of y) found. Property-1 constraints cannot be enforced."
             )
 
-        s = np.zeros(self.makeRegressors(y, u).shape[1])
+        s = np.zeros(length_model)
         s[clusters["linear_output"]] = 1.0
         constraints.append((s, 1.0))
 
@@ -541,7 +542,7 @@ class Individual(list):
             idxs = clusters[cluster_name]
             if not idxs:
                 continue
-            s = np.zeros(self.makeRegressors(y, u).shape[1])
+            s = np.zeros(length_model)
             s[idxs] = 1.0
             constraints.append((s, 0.0))
 
