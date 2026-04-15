@@ -109,9 +109,12 @@ class MutGPReplace(Mutation):
 
     def mutate(self, ind):
         if self._element._mode in ['SISO', 'MISO']:
-            idx = random.randint(0, len(ind) - 1)
-            ind[idx] = self._element._toolbox._program()
-            
+            try:
+                idx = random.randint(0, len(ind) - 1)
+                ind[idx] = self._element._toolbox._program()
+            except:
+                pass
+
         if self._element._mode == 'MIMO' or (self._element._mode == 'FIR' and self._element._nOutputs > 1):
             for o in range(len(ind)):
                 idx = random.randint(0, len(ind[o]) - 1)
