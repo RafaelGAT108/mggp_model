@@ -655,13 +655,13 @@ class MGGP:
             pickle.dump(model_data, f)
 
 
-    def _check_hysteretic_constraints(self, ind, tol=1e-6):
+    def _check_hysteretic_constraints(self, ind, tol=1e-10):
         """
         Verifica se o modelo atende às restrições de continuum de equilíbrio
         """
         try:
             clusters = ind.identify_term_clusters(self.outputs, self.inputs)
-            theta = ind._theta.flatten()
+            theta = np.asarray(ind._theta).flatten() 
             
             linear_output_sum = sum(theta[idx] for idx in clusters['linear_output'])
             if abs(linear_output_sum - 1.0) > tol:
