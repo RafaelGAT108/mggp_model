@@ -49,6 +49,16 @@ def mimo_CLASSIFY(ind, y, u):
     yp = [np.dot(p, t) for p, t in zip(P, np.array(ind._theta))]
     return np.array(yp).T, y[ind.lagMax:]
 
+def miso_CLASSIFY(ind, y, u):
+    """
+    Preditor "mesmo instante" para classificação (MIMO).
+    Alinha y_pred[k] com y_true[k], iniciando em k = lagMax.
+    """
+    P = ind.makeRegressors(y, u)
+    # yp = [np.dot(p, t) for p, t in zip(P, np.array(ind._theta))]
+    yp = np.dot(P, ind.theta)
+    return np.array(yp).T, y[ind.lagMax:]
+
 
 def miso_OSA(ind, y, u):
     """
