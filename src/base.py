@@ -18,7 +18,7 @@ import re
 import warnings
 from sklearn.metrics import mean_squared_error, accuracy_score, log_loss
 from numba import njit
-from src.predictors import miso_OSA, miso_FreeRun, miso_MShooting, mimo_CLASSIFY, miso_FIR_INSTANT, mimo_FIR_INSTANT
+from src.predictors import miso_OSA, miso_FreeRun, miso_MShooting, mimo_CLASSIFY, miso_FIR_INSTANT, mimo_FIR_INSTANT, miso_CLASSIFY
 from src.predictors import mimo_OSA, mimo_FreeRun, mimo_MShooting, mimo_FIR_MShooting, mimo_FIR_FreeRun
 from sklearn.preprocessing import LabelBinarizer
 import warnings
@@ -106,8 +106,8 @@ class Element(object):
         self._pset = gp.PrimitiveSet("main", self._nVar)
         # self._pset.addPrimitive(operator.add, 2, name="add")
         self._pset.addPrimitive(operator.mul, 2)
-        # self._pset.addPrimitive(operator.sub, 2, name="subtraction")
-        # self._pset.addPrimitive(sign, 2, name="sign")
+        self._pset.addPrimitive(operator.sub, 2, name="subtraction")
+        self._pset.addPrimitive(sign, 2, name="sign")
 
         # for i, roll in zip(self._delays, delays):
         #     self._pset.addPrimitive(roll, 1, name=f'q{i}')
@@ -480,7 +480,8 @@ class Individual(list):
             tree_str = str(self[term_index - 1]).lower()
             
             # Verifica se contém funções φ
-            if 'subtraction' in tree_str or 'greater' in tree_str or 'less' in tree_str:
+            # if 'subtraction' in tree_str or 'greater' in tree_str or 'less' in tree_str:
+            if 'subtraction' in tree_str or 'sign' in tree_str:
                 return 'phi_terms'
             
             # Classifica baseado nas variáveis presentes
@@ -504,7 +505,7 @@ class Individual(list):
 
     def _is_linear_term(self, tree_str):
         """Verifica se o termo é linear (apenas multiplicações básicas)"""
-        non_linear_ops = ['sign', 'subtraction', 'mul(mul', 'mul(q']
+        non_linear_ops = ['sign', 'subtraction', 'mul(mul', 'mul(q', 'mul(']
         return not any(op in tree_str for op in non_linear_ops)
     
 
@@ -521,19 +522,19 @@ class Individual(list):
         clusters = self.identify_term_clusters(y, u)
 
         constraints = []
-
+        length_model = self.makeRegressors(y, u).shape[1]
         # Bias must be zero to avoid fixing the equilibrium point.
-        # if clusters["bias"]:
-        #     s = np.zeros(self.makeRegressors(y, u).shape[1])
-        #     s[clusters["bias"]] = 1.0
-        #     constraints.append((s, 0.0))
+        if clusters["bias"]:
+            s = np.zeros(length_model)
+            s[clusters["bias"]] = 1.0
+            constraints.append((s, 0.0))
 
         if not clusters["linear_output"]:
             raise ValueError(
                 "No linear output term (pure delay of y) found. Property-1 constraints cannot be enforced."
             )
 
-        s = np.zeros(self.makeRegressors(y, u).shape[1])
+        s = np.zeros(length_model)
         s[clusters["linear_output"]] = 1.0
         constraints.append((s, 1.0))
 
@@ -541,7 +542,7 @@ class Individual(list):
             idxs = clusters[cluster_name]
             if not idxs:
                 continue
-            s = np.zeros(self.makeRegressors(y, u).shape[1])
+            s = np.zeros(length_model)
             s[idxs] = 1.0
             constraints.append((s, 0.0))
 
@@ -580,8 +581,9 @@ class Individual(list):
         
         if self._logistic_model is not None:            
             # probabilities = np.array([one_hot_argmax(x) for x in X_regressors])
-            probabilities = np.array([one_hot_argmax(softmax(x)) for x in X_regressors])
-            return probabilities, y_true
+            pred_one_hot_encode = np.array([one_hot_argmax(softmax(x)) for x in X_regressors])
+            # pred_labels = np.array([np.argmax(prob) for prob in pred_one_hot_encode])
+            return pred_one_hot_encode, y_true
         
         else:
             raise Exception("Logistic regression model not trained!")
@@ -852,12 +854,32 @@ class IndividualMISO(Individual):
         if y.shape[1] > 1:
             raise Exception('Wrong number of outputs. The algorithm is set',
                             'for a single output')
+        is_classification = bool(getattr(self, "_logistic_model", False))
 
-        listV = [y[:-1].reshape(-1, 1)]
+        listV = []
+        if is_classification:
+            listV = [y.reshape(-1, 1)]
+
+        else:
+            listV = [y[:-1].reshape(-1, 1)]
+        
         for v in u.T:
-            listV.append(v[:-1].reshape(-1, 1))
+            if is_classification:
+                listV.append(v.reshape(-1, 1))
 
-        p = np.ones((y.shape[0] - self.lagMax - 1, len(self) + 1))
+            else:
+                listV.append(v[:-1].reshape(-1, 1))
+
+        # listV = [y[:-1].reshape(-1, 1)]
+        # for v in u.T:
+        #     listV.append(v[:-1].reshape(-1, 1))
+        
+        if is_classification:
+            n_samples = y.shape[0] - self.lagMax
+        else:
+            n_samples = y.shape[0] - self.lagMax - 1
+            
+        p = np.ones((n_samples, len(self) + 1))
 
         for i in range(len(self)):
             func = self._funcs[i]
@@ -878,10 +900,13 @@ class IndividualMISO(Individual):
         must be in column formm.
         '''
         p = self.makeRegressors(y, u)
-        if np.linalg.cond(p, -2) < 1e-10:
-            raise np.linalg.LinAlgError(
-                'Ill conditioned regressors matrix!')
-        yd = y[self.lagMax + 1:]
+        # if np.linalg.cond(p, -2) < 1e-10:
+        #     raise np.linalg.LinAlgError('Ill conditioned regressors matrix!')
+        
+        is_classification = bool(getattr(self, "_logistic_model", False))
+        offset = 0 if is_classification else 1  # <-- chave do alinhamento
+
+        yd = y[self.lagMax + offset:]
         # self._theta = np.linalg.inv(p.T @ p) @ p.T @ yd
         self._theta = theta_miso(p, yd)
         if len(self._theta.shape) == 1:
