@@ -669,7 +669,6 @@ class MGGP:
 
 
     def _check_hysteretic_constraints(self, ind, tol=1e-10):
-    def _check_hysteretic_constraints(self, ind, tol=1e-10):
         """
         Verifica se o modelo atende às restrições de continuum de equilíbrio
         """
