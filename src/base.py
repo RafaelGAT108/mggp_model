@@ -539,17 +539,12 @@ class Individual(list):
             s = np.zeros(length_model)
             s[clusters["bias"]] = 1.0
             constraints.append((s, 0.0))
-        if clusters["bias"]:
-            s = np.zeros(length_model)
-            s[clusters["bias"]] = 1.0
-            constraints.append((s, 0.0))
 
         if not clusters["linear_output"]:
             raise ValueError(
                 "No linear output term (pure delay of y) found. Property-1 constraints cannot be enforced."
             )
 
-        s = np.zeros(length_model)
         s = np.zeros(length_model)
         s[clusters["linear_output"]] = 1.0
         constraints.append((s, 1.0))
@@ -558,7 +553,6 @@ class Individual(list):
             idxs = clusters[cluster_name]
             if not idxs:
                 continue
-            s = np.zeros(length_model)
             s = np.zeros(length_model)
             s[idxs] = 1.0
             constraints.append((s, 0.0))

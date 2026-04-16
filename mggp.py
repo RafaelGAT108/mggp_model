@@ -317,7 +317,7 @@ class MGGP:
                 model.leastSquares, self.outputs, self.inputs, align=align
             )
         else:
-            if ['sign'] in self.element.operators: 
+            if 'sign' in self.element.operators: 
                 theta_value = model.hysteretic_constrained_ls(self.outputs, self.inputs)
             else:
                 theta_value = model.leastSquares(self.outputs, self.inputs)
@@ -495,7 +495,7 @@ class MGGP:
             if self.problem_type == "classification":
                 model._logistic_model = True
             
-            if ['sign'] in self.element.operators: 
+            if 'sign' in self.element.operators: 
                 theta_value = model.hysteretic_constrained_ls(self.outputs, self.inputs)
             else:
                 theta_value = model.leastSquares(self.outputs, self.inputs)
@@ -680,14 +680,10 @@ class MGGP:
             if abs(linear_output_sum - 1.0) > tol:
                 return False
                 
-            for cluster_type in ['linear_input', 'cross_terms', 'nonlinear_y', 'nonlinear_u', 'phi_terms']:
+            for cluster_type in ['linear_input', 'cross_terms', 'nonlinear_y', 'nonlinear_u']:
                 cluster_sum = sum(theta[idx] for idx in clusters[cluster_type])
                 if abs(cluster_sum) > tol:
                     return False
-                
-            cluster_sum = sum(theta[idx] for idx in clusters['phi_terms'])
-            if abs(cluster_sum - 0.1) > tol:
-                return False
                     
             return True
         except:
