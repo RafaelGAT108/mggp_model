@@ -122,7 +122,7 @@ class MGGP:
                                maxHeight=self.maxHeight,
                                mode=self.mode,
                                single_delay_only=self.single_delay_only,
-                               operators=kwargs.get('operators', None))
+                               operators=kwargs['kwargs'].get('operators', None))
 
         self.element.renameArguments(self.buildArgumentsDict())
 
@@ -632,7 +632,7 @@ class MGGP:
             nTerms=model_data['nTerms'],
             maxHeight=model_data['maxHeight'],
             mode=self.mode,
-            kwargs={'operators': model_data.get('operators', None)}
+            # operators=model_data.get('operators', None)
         )
         element.renameArguments(model_data['arguments'])
         

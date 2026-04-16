@@ -45,7 +45,7 @@ class Element(object):
                  maxHeight: int = 5,
                  mode="MISO",
                  single_delay_only: bool = False,
-                 operators=['mul'],):
+                 operators=['mul', 'subtraction', 'sign']):
         
         self._pset: gp.PrimitiveSet = None
         self._toolbox: base.Toolbox = None
@@ -69,13 +69,6 @@ class Element(object):
         elif type(nDelays) is list:
             self._delays = nDelays
 
-        self.iniciatePrimitivesSets()
-
-        self._weights = weights
-        self._nTerms = nTerms
-        self._nOutputs = nOutputs
-        self._maxHeight = maxHeight
-
         self.operators = operators
         self.primitives_sets = {
             "mul": (operator.mul, 2),
@@ -83,7 +76,13 @@ class Element(object):
             "subtraction": (operator.sub, 2),
             "add": (operator.add, 2),
         }
-        
+
+        self.iniciatePrimitivesSets()
+
+        self._weights = weights
+        self._nTerms = nTerms
+        self._nOutputs = nOutputs
+        self._maxHeight = maxHeight     
 
         creator.create("Program", gp.PrimitiveTree, fitness=None,
                        pset=self.pset)
@@ -112,16 +111,16 @@ class Element(object):
     def iniciatePrimitivesSets(self):
         
         self._pset = gp.PrimitiveSet("main", self._nVar)
-
+        
         for operator in self.operators:
 
-            if operator in self.primitives_sets:
+            if operator in self.primitives_sets.keys():
                 func, arity = self.primitives_sets[operator]
                 self._pset.addPrimitive(func, arity, name=operator)
             
             else:
                 raise ValueError(f"Operator '{operator}' is not defined in primitives_sets.")
-
+        
         if not self._single_delay_only:
             delays = [partial(_roll, i=i) for i in self._delays]
 
