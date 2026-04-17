@@ -36,14 +36,14 @@ class MGGP:
                  populationSize: int = 100,
                  elitePercentage: int = 10,
                  filename: str = "best_model.pkl",
-                #  single_delay_only: bool = False,
                  mode: str = None,
                  problem_type: Literal['regression', 'classification'] = 'regression',
                  classification_metric: Literal['accuracy', 'log_loss', 'f1_macro'] = 'accuracy',
                  froe_mode: bool = False, 
                  pruning_probability: float = 0.5,     
                  pruning_tolerance: float = 1e-5,      
-                 phi_functions: List[str] = ['subtraction', 'sign'],      
+                 phi_functions: List[str] = ['subtraction', 'sign'],  
+                 operators: List[str] = ['mul'],   
                  **kwargs):
         """
         Args:
@@ -94,7 +94,7 @@ class MGGP:
         self.pruning_probability = pruning_probability
         self.pruning_tolerance = pruning_tolerance
         self.phi_functions = phi_functions 
-
+        self.operators = operators
         if self.evaluationMode not in ["MSE", "NMSE", "MAPE", "RMSE"]:
             raise Exception("Choose a measure between:\n" +
                             "MSE, NMSE, MAPE, or RMSE")
@@ -122,7 +122,7 @@ class MGGP:
                                maxHeight=self.maxHeight,
                                mode=self.mode,
                                single_delay_only=self.single_delay_only,
-                               operators=kwargs['kwargs'].get('operators', None))
+                               operators=self.operators)
 
         self.element.renameArguments(self.buildArgumentsDict())
 
@@ -318,7 +318,7 @@ class MGGP:
                 model.leastSquares, self.outputs, self.inputs, align=align
             )
         else:
-            if 'sign' in self.element.operators: 
+            if 'sign' in self.operators: 
                 theta_value = model.hysteretic_constrained_ls(self.outputs, self.inputs)
             else:
                 theta_value = model.leastSquares(self.outputs, self.inputs)
@@ -496,7 +496,7 @@ class MGGP:
             if self.problem_type == "classification":
                 model._logistic_model = True
             
-            if 'sign' in self.element.operators: 
+            if 'sign' in self.operators: 
                 theta_value = model.hysteretic_constrained_ls(self.outputs, self.inputs)
             else:
                 theta_value = model.leastSquares(self.outputs, self.inputs)
@@ -662,7 +662,7 @@ class MGGP:
             'maxHeight': self.maxHeight,
             'nDelays': self.nDelays,
             'arguments': self.buildArgumentsDict(),
-            'operators': self.element.operators if hasattr(self.element, 'operators') else None
+            'operators': self.operators 
         }
         
         with open(self.filename, 'wb') as f:
