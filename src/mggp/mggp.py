@@ -1,17 +1,16 @@
-import multiprocessing
+# import multiprocessing
 from typing import Literal, Tuple, Optional, List
 import numpy as np
-from src.base import Element, Individual
+from .base import Element, Individual
 import time
 import warnings
 from deap import tools
 from copy import deepcopy
-from src.mutations import *
-from src.crossings import *
+from .mutations import *
+from .crossings import *
 from tqdm.auto import tqdm
 from IPython.display import clear_output
-from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
-import matplotlib.pyplot as plt
+# from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 from collections import defaultdict
 import inspect
 warnings.filterwarnings("ignore")
@@ -624,7 +623,6 @@ class MGGP:
             with open(path, 'rb') as f:
                 model_data = pickle.load(f)
 
-        # Create the element with the same parameters
         element = Element(
             weights=(-1,),
             nDelays=model_data['nDelays'],
@@ -719,11 +717,9 @@ class MGGP:
             """True se a subárvore em idx é q*(u#) (uma cadeia de q's terminando em u)."""
             node = tree[idx]
 
-            # Terminal precisa ser u#
             if isinstance(node, gp.Terminal):
                 return isinstance(node.value, str) and node.value.startswith("u")
 
-            # Primitiva precisa ser q*
             if not isinstance(node, gp.Primitive):
                 return False
             if not node.name.startswith("q"):
@@ -731,7 +727,6 @@ class MGGP:
             if node.arity != 1:
                 return False
 
-            # recursivo no único argumento
             child_idx = idx + 1
             return _is_q_chain_to_u(tree, child_idx)
 
@@ -776,13 +771,11 @@ class MGGP:
 
         if self.mode in ["SISO", "MISO"] or (self.mode == "FIR" and self.nOutputs == 1):
             for i, tree in enumerate(ind):
-                # ind[i] = process_tree(tree)
                 ind[i] = constrain_phi_tree(tree, self.element._pset)
 
         else:  # MIMO
             for o in range(len(ind)):
                 for i, tree in enumerate(ind[o]):
-                    # ind[o][i] = process_tree(tree)
                     ind[o][i] = constrain_phi_tree(tree, self.element._pset)
 
     def _is_lagged_input(self, node):
@@ -848,7 +841,7 @@ class MGGP:
     def _froe_pruning_mimo(self, ind, P, yd):
         """FROE para modelos MIMO (aplica para cada saída)"""
         for o in range(len(ind)):
-            P_o = P[o]  # Matriz de regressores para a saída o
+            P_o = P[o]  
             yd_o = yd[:, o] if yd.ndim > 1 else yd
             
             n_terms = P_o.shape[1] - 1

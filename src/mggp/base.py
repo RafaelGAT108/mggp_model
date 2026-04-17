@@ -18,8 +18,8 @@ import re
 import warnings
 from sklearn.metrics import mean_squared_error, accuracy_score, log_loss
 from numba import njit
-from src.predictors import miso_OSA, miso_FreeRun, miso_MShooting, mimo_CLASSIFY, miso_FIR_INSTANT, mimo_FIR_INSTANT, miso_CLASSIFY
-from src.predictors import mimo_OSA, mimo_FreeRun, mimo_MShooting, mimo_FIR_MShooting, mimo_FIR_FreeRun
+from .predictors import miso_OSA, miso_FreeRun, miso_MShooting, mimo_CLASSIFY, miso_FIR_INSTANT, mimo_FIR_INSTANT, miso_CLASSIFY
+from .predictors import mimo_OSA, mimo_FreeRun, mimo_MShooting, mimo_FIR_MShooting, mimo_FIR_FreeRun
 from sklearn.preprocessing import LabelBinarizer
 import warnings
 warnings.filterwarnings('ignore')
@@ -324,24 +324,20 @@ class Individual(list):
     def __init__(self, data=[]):
         super().__init__(data)
         self._funcs = []
-        # self._msfuncs = []
         self._lagMax = None
         self._theta = np.array([])
         self._terminals = ''
         self._nTerms = 0
-        self._logistic_model = None  # modelo de regressão logística
+        self._logistic_model = None 
         self._label_binarizer = None  
         
 
     @property
     def theta(self):
-        # if self._theta == np.ndarray([]):
-        #     raise Exception("Parameters \'theta\' are not defined!")
         return self._theta
 
     @theta.setter
     def theta(self, theta):
-        # self._theta = np.array(theta)
         self._theta = theta
 
     @property
@@ -410,7 +406,7 @@ class Individual(list):
         n_terms = p.shape[1]
 
         clusters = {
-            "bias": [],  # Assuming the first column is the bias term (intercept)
+            "bias": [],  
             "linear_output": [],
             "linear_input": [],
             "nonlinear_y": [],
@@ -486,19 +482,17 @@ class Individual(list):
         Classifica um termo baseado em sua estrutura
         """
         if term_index == 0:
-            # return 'linear_output'  # Bias term
-            return 'bias'  # Bias term
+            # return 'linear_output' 
+            return 'bias'  
         
         # Para MISO/FIR
         if hasattr(self, '_funcs') and len(self._funcs) > term_index - 1:
             tree_str = str(self[term_index - 1]).lower()
             
-            # Verifica se contém funções φ
-            # if 'subtraction' in tree_str or 'greater' in tree_str or 'less' in tree_str:
+            # Verifica se contém funções phi
             if 'subtraction' in tree_str or 'sign' in tree_str:
                 return 'phi_terms'
             
-            # Classifica baseado nas variáveis presentes
             if 'y' in tree_str and 'u' not in tree_str:
                 if self._is_linear_term(tree_str):
                     return 'linear_output'
@@ -538,7 +532,7 @@ class Individual(list):
         constraints = []
         p = self.makeRegressors(y, u)
         length_model = p.shape[1]
-        # Bias must be zero to avoid fixing the equilibrium point.
+
         if clusters["bias"]:
             s = np.zeros(length_model)
             s[clusters["bias"]] = 1.0
@@ -586,7 +580,6 @@ class Individual(list):
     
         def softmax(x):
             """Calcula softmax para cada linha do vetor de entrada x."""
-            # Subtrair o máximo melhora a estabilidade numérica (evita overflow)
             e_x = np.exp(x - np.max(x))
             return e_x / e_x.sum()
         
@@ -892,10 +885,6 @@ class IndividualMISO(Individual):
 
             else:
                 listV.append(v[:-1].reshape(-1, 1))
-
-        # listV = [y[:-1].reshape(-1, 1)]
-        # for v in u.T:
-        #     listV.append(v[:-1].reshape(-1, 1))
         
         if is_classification:
             n_samples = y.shape[0] - self.lagMax
@@ -909,8 +898,6 @@ class IndividualMISO(Individual):
             out = func(*listV)
             p[:, i + 1] = out.reshape(-1)[self.lagMax:]
 
-        # p = np.array([np.ones(y.shape[0] - self.lagMax - 1) if i == 0 else
-        #               self._funcs[i - 1](*listV).reshape(-1)[self.lagMax:] for i in range(len(self) + 1)]).T
         return p
 
 
@@ -962,7 +949,6 @@ class IndividualMIMO(Individual):
             raise Exception('Wrong number of outputs. The algorithm is set',
                             'for multiple outputs')
         
-        # is_classification = hasattr(self, '_logistic_model') and self._logistic_model is not None
         is_classification = bool(getattr(self, "_logistic_model", False))
         
         listV = []
@@ -1031,7 +1017,6 @@ class IndividualMIMO(Individual):
         self._theta = np.array([theta_mimo(P[o], y_slice[:, o]) for o in range(len(P))])
         return self._theta
 
-    
     
     # def to_equation(self):
     #     string = ''

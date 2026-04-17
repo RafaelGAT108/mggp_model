@@ -21,11 +21,24 @@ This is the first functional version of the project. It provides a solid foundat
 
 ## 🚀 Quick Start
 
+Before start to run any notebook, run the code below to install the mggp as a library:
+
+```bash
+pip install -e .
+```
+
+otherwise, you'll need use:
+```python
+src.mggp import MGGP
+```
+
 Check out the example notebook to get started:
 
 📓 **`01_MGGP_Regression.ipynb`** - Demonstrates how to configure and use MGGP for Regression problems, and
 
 📓 **`01_MGGP_Classifier.ipynb`** - Demonstrates how to configure and use MGGP for Classification problems.
+
+
 
 ## 📋 Requirements
 

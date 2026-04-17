@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mggp"
+version = "0.0.2"
+description = "Multi-Gene Genetic Programming for system identification and regression"
+authors = [
+    {name = "Rafael Avila", email = "rafael.santos0t5@gmail.com"},
+    {name = "Henrique Castro", email = "henriquec.castro@outlook.com"},
+]
+readme = "README.md"
+requires-python = ">=3.9"
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -4,15 +4,14 @@ Created on Jun 2023
 
 @author: Henrique Castro
 """
-import multiprocessing
-from concurrent.futures.thread import ThreadPoolExecutor
+# import multiprocessing
+# from concurrent.futures.thread import ThreadPoolExecutor
 from tqdm import tqdm
 import numpy as np
-from joblib import Parallel, delayed
-import pandas as pd
-from numba import njit
-from concurrent.futures import ProcessPoolExecutor
-import numpy as np
+# from joblib import Parallel, delayed
+# import pandas as pd
+# from numba import njit
+# from concurrent.futures import ProcessPoolExecutor
 
 def miso_FIR_INSTANT(ind, y, u):
     """
