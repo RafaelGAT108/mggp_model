@@ -255,6 +255,7 @@ class MGGP:
         self._hof.update(self._pop)
 
     def get_fitness_value(self, individual):
+        
         return individual.fitness.values[0]
 
     def _createStatistics(self):
@@ -364,8 +365,8 @@ class MGGP:
                     
                     self._constrain_phi_functions(ind)
         
-                    # if np.random.random() < self.pruning_probability:
-                    #     self._apply_froe_pruning(ind)
+                    if np.random.random() < self.pruning_probability:
+                        self._apply_froe_pruning(ind)
 
                     theta_value = ind.hysteretic_constrained_ls(self.outputs, self.inputs)
                     ind._theta = theta_value
@@ -735,15 +736,14 @@ class MGGP:
             return _is_q_chain_to_u(tree, child_idx)
 
         def _make_q1_u1_tree(pset) -> gp.PrimitiveTree:
-            q2 = next(p for p in pset.primitives[pset.ret] if p.name == "q2")
-            u1 = next(t for t in pset.terminals[pset.ret] if getattr(t, "value", None) == "u1")
-            return gp.PrimitiveTree([q2, u1])
-        
-        
-        def _make_u1_tree(pset) -> gp.PrimitiveTree:
             q1 = next(p for p in pset.primitives[pset.ret] if p.name == "q1")
             u1 = next(t for t in pset.terminals[pset.ret] if getattr(t, "value", None) == "u1")
             return gp.PrimitiveTree([q1, u1])
+        
+        
+        def _make_u1_tree(pset) -> gp.PrimitiveTree:
+            u1 = next(t for t in pset.terminals[pset.ret] if getattr(t, "value", None) == "u1")
+            return gp.PrimitiveTree([u1])
 
         def constrain_phi_tree(tree: gp.PrimitiveTree, pset) -> gp.PrimitiveTree:
             """Garante que cada argumento de φ é q*(u#). Se não for, vira q1(u1)."""
@@ -754,7 +754,7 @@ class MGGP:
             while i < len(tree):
                 node = tree[i]
                 if isinstance(node, gp.Primitive) and node.name in PHI_NAMES:
-                    # para cada argumento, checar e substituir o slice inteiro se inválido
+                    
                     arg_idx = i + 1
                     first_substitution = True
                     for _ in range(node.arity):
@@ -768,7 +768,6 @@ class MGGP:
                             else:
                                 tree[arg_slice] = repl
                                 
-                                # depois de substituir, o próximo argumento começa logo após o slice inserido
                                 arg_idx = arg_slice.start + len(repl)
                         else:
                             arg_idx = arg_slice.stop

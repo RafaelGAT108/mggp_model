@@ -126,6 +126,10 @@ class Element(object):
 
             for i, roll in zip(self._delays, delays):
                 self._pset.addPrimitive(roll, 1, name=f'q{i}')
+        
+        else:
+            self._pset.addPrimitive(partial(_roll, i=1), 1, name=f'q1')
+
 
     def iniciateToolbox(self):
 
@@ -549,13 +553,21 @@ class Individual(list):
         s[clusters["linear_output"]] = 1.0
         constraints.append((s, 1.0))
 
-        for cluster_name in ("linear_input", "cross_terms", "nonlinear_y", "nonlinear_u", 'phi_terms'):
+        for cluster_name in ("linear_input", "cross_terms", "nonlinear_y", "nonlinear_u"):
             idxs = clusters[cluster_name]
             if not idxs:
                 continue
             s = np.zeros(length_model)
             s[idxs] = 1.0
             constraints.append((s, 0.0))
+
+        # for cluster_name in ("linear_input",):
+        #     idxs = clusters[cluster_name]
+        #     if not idxs:
+        #         continue
+        #     s = np.zeros(length_model)
+        #     s[idxs] = 1.0
+        #     constraints.append((s, 1.0))
 
         S = np.vstack([c[0] for c in constraints])
         c = np.array([c[1] for c in constraints])
