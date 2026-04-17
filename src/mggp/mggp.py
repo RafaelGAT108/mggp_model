@@ -35,7 +35,7 @@ class MGGP:
                  populationSize: int = 100,
                  elitePercentage: int = 10,
                  filename: str = "best_model.pkl",
-                 mode: str = None,
+                 mode: Literal['NARX', 'FIR'] = 'NARX',
                  problem_type: Literal['regression', 'classification'] = 'regression',
                  classification_metric: Literal['accuracy', 'log_loss', 'f1_macro'] = 'accuracy',
                  froe_mode: bool = False, 
@@ -101,7 +101,7 @@ class MGGP:
         if self.nInputs > 1 and self.nOutputs == 1:
             self.mode = "MISO"
         elif self.nInputs > 1 and self.nOutputs > 1:
-            self.mode = "MIMO" if mode is None else mode
+            self.mode = "MIMO" if mode is 'NARX' else mode
             # self.mode = "FIR"
         elif self.nInputs >= 1 and self.nOutputs > 1:
             self.mode = "FIR"
@@ -356,9 +356,6 @@ class MGGP:
 
             if self.problem_type == 'regression':
                 
-                # self._constrain_phi_functions(ind)
-                # if np.random.random() < self.pruning_probability:
-                #     self._apply_froe_pruning(ind)
 
                 if self.froe_mode:
                     
@@ -374,7 +371,6 @@ class MGGP:
                         return (np.inf,)  
         
                 else:
-                    # theta_value = ind.leastSquares(self.outputs, self.inputs)
                     if self.mode == "FIR":
                         align = self._fir_align(self.evaluationType)
                         theta_value = self._call_with_align_if_supported(
@@ -402,7 +398,6 @@ class MGGP:
                     )
                 else:
                     theta_value = ind.leastSquares(self.outputs, self.inputs)
-                # theta_value = ind.leastSquares(self.outputs, self.inputs)
                 
                 ind._theta = theta_value
                 
