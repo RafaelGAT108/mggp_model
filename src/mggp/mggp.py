@@ -253,9 +253,10 @@ class MGGP:
         # print(self._logbook)
         self._hof.update(self._pop)
 
+
     def get_fitness_value(self, individual):
-        
         return individual.fitness.values[0]
+
 
     def _createStatistics(self):
         stats = tools.Statistics(self.get_fitness_value)
@@ -263,6 +264,7 @@ class MGGP:
         stats.register("max", np.max)
         stats.register("min", np.min)
         return stats
+
 
     def step(self, gen_number):
         if not self._pop:
@@ -559,6 +561,7 @@ class MGGP:
         else:
             raise Exception("Choose a valuation dataset type between list or tuple.")
 
+
     def simplify_model(self, model):
         equation = model.to_equation()
 
@@ -579,6 +582,7 @@ class MGGP:
             output_lines.append(self.simplify_terms(current_output))
 
         return '\n'.join(output_lines)
+
 
     def simplify_terms(self, terms):
       
@@ -725,6 +729,7 @@ class MGGP:
             child_idx = idx + 1
             return _is_q_chain_to_u(tree, child_idx)
 
+
         def _make_q1_u1_tree(pset) -> gp.PrimitiveTree:
             q1 = next(p for p in pset.primitives[pset.ret] if p.name == "q1")
             u1 = next(t for t in pset.terminals[pset.ret] if getattr(t, "value", None) == "u1")
@@ -734,6 +739,7 @@ class MGGP:
         def _make_u1_tree(pset) -> gp.PrimitiveTree:
             u1 = next(t for t in pset.terminals[pset.ret] if getattr(t, "value", None) == "u1")
             return gp.PrimitiveTree([u1])
+
 
         def constrain_phi_tree(tree: gp.PrimitiveTree, pset) -> gp.PrimitiveTree:
             """Garante que cada argumento de φ é q*(u#). Se não for, vira q1(u1)."""
@@ -772,6 +778,7 @@ class MGGP:
             for o in range(len(ind)):
                 for i, tree in enumerate(ind[o]):
                     ind[o][i] = constrain_phi_tree(tree, self.element._pset)
+
 
     def _is_lagged_input(self, node):
         """Verifica se o nó é uma variável de entrada defasada"""
