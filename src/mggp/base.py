@@ -7,7 +7,7 @@ Created on Apr 2023
 
 import pickle
 from functools import partial
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from typing import List
 import sys
 import random
@@ -15,37 +15,32 @@ from deap import gp, creator, base, tools
 import operator
 import numpy as np
 import re
-import warnings
 from sklearn.metrics import mean_squared_error, accuracy_score, log_loss
 from numba import njit
 from .predictors import miso_OSA, miso_FreeRun, miso_MShooting, mimo_CLASSIFY, miso_FIR_INSTANT, mimo_FIR_INSTANT, miso_CLASSIFY
 from .predictors import mimo_OSA, mimo_FreeRun, mimo_MShooting, mimo_FIR_MShooting, mimo_FIR_FreeRun
-from sklearn.preprocessing import LabelBinarizer
+# from sklearn.preprocessing import LabelBinarizer
 import warnings
 warnings.filterwarnings('ignore')
 # import cupy as cp
 
-#%% Element Class
-# def _roll(args, i):
-#     return np.roll(args, shift=i)
 def _roll(*args, i):
     return np.roll(*args, shift=i)
 
 def sign(X1, X2):
     return np.sign(X1-X2)
 
-
 class Element(object):
     def __init__(self,
                  weights: tuple = (-1,),
-                 nDelays: int | List = 3,
+                 nDelays: int | List[int] = 3,
                  nInputs: int = 1,
                  nOutputs: int = 1,
                  nTerms: int = 10,
                  maxHeight: int = 5,
-                 mode="MISO",
+                 mode: str = "MISO",
                  single_delay_only: bool = False,
-                 operators=['mul', 'subtraction', 'sign']):
+                 operators: List[str] = ['mul', 'subtraction', 'sign']):
         
         self._pset: gp.PrimitiveSet = None
         self._toolbox: base.Toolbox = None
@@ -101,12 +96,9 @@ class Element(object):
             else:
                 creator.create("Individual", IndividualFIRMIMO, fitness=creator.FitnessMin)
         else:
-            raise Exception("Choose a mode between:\n" +
-                            "MISO, MIMO, FIR or SISO")
+            raise Exception("Choose a mode between:\n" + "MISO, MIMO, FIR or SISO")
         self.iniciateToolbox()
 
-    def getMode(self):
-        return self._mode
 
     def iniciatePrimitivesSets(self):
         
@@ -238,9 +230,7 @@ class Element(object):
 
         local_scope = {}
         try:
-            # Use exec para definir a função no escopo local
             exec(code, pset.context, local_scope)
-            # Retorne a função gerada
             return local_scope["generated_function"]
         except MemoryError:
             _, _, traceback = sys.exc_info()
@@ -250,6 +240,7 @@ class Element(object):
                 "See the DEAP documentation for more information. "
                 "DEAP will now abort."
             ).with_traceback(traceback)
+
 
     def _setModelLagMax(self, model):
         def checkbranch(branch):
@@ -319,7 +310,6 @@ class Element(object):
             return o
 
 
-#%% Individual Abstract Class
 class Individual(list):
     def __init__(self, data=[]):
         super().__init__(data)
@@ -933,6 +923,7 @@ class IndividualMISO(Individual):
             listString.append(str(tree))
         # return listString
         return [str(tree) for tree in self]
+
 
 class IndividualMIMO(Individual):
     def __init__(self, data=[]):
