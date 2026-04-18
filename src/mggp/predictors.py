@@ -21,7 +21,7 @@ def mimo_FIR_INSTANT(ind, y_true, u):
 
 
 def mimo_INSTANT(ind, y_true, u):
-    regressors = ind.makeRegressors(y, u, align="instant")
+    regressors = ind.makeRegressors(y_true, u, align="instant")
     yp = [np.dot(regressor, theta) for regressor, theta in zip(regressors, np.array(ind._theta))]
     y_pred = np.array(yp).T
     y_true = y_true[ind.lagMax:]          # mesmo instante
