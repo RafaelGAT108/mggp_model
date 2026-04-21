@@ -77,37 +77,46 @@ def mimo_OSA(ind, y_true, u):
 
 
 def miso_FreeRun(ind, y_true, u):
-    """
-    Implements the Free-Run predictor for MISO models
-    Arguments:
-        ind = C_Individual object
-        y0  = 1-dimensional array with initial conditions
-        u   = n-dimensional array with input data
-    """
+
     y_true = y_true.reshape(-1, 1)
-    if len(u.shape) == 1:
+
+    if u.ndim == 1:
         u = u.reshape(-1, 1)
 
-    y = y_true[:ind.lagMax + 1].reshape(-1, 1)
+    lag = ind.lagMax
+    n_samples = u.shape[0]
 
-    for i in range(u.shape[0] - ind.lagMax):
+    y = y_true[:lag].copy()
 
-        listV = [y[i:i + ind.lagMax + 1].reshape(-1, 1)]
+    y_pred = []
 
+    for k in range(lag, n_samples):
+
+        # y[k-1], ..., tamanho = lag
+        y_window = y[k - lag:k].reshape(-1, 1)
+
+        listV = [y_window]
+
+        # u[k], u[k-1], ..., tamanho = lag+1
         for v in u.T:
-            listV.append(v[i:i + ind.lagMax + 1].reshape(-1, 1))
+            u_window = v[k - lag:k + 1].reshape(-1, 1)
+            listV.append(u_window)
 
-        regressors = [np.ones((ind.lagMax + 1))]
+        regressors = [1.0]
 
-        for i in range(len(ind)):
-
-            func = ind._funcs[i]
+        for j in range(len(ind)):
+            func = ind._funcs[j]
             out = func(*listV)
-            regressors.append(out.reshape(-1))
+            regressors.append(float(out[-1]))
 
-        regressors = np.array(regressors).T[ind.lagMax:]
-        y = np.vstack((y, np.dot(regressors, ind.theta)))
-    return np.nan_to_num(y[:-1], nan=0), np.nan_to_num(y_true, nan=0)
+        yk = np.dot(regressors, ind.theta)
+        y = np.vstack((y, [yk]))
+        y_pred.append(yk)
+
+    y_pred = np.array(y_pred).reshape(-1, 1)
+    y_true_trim = y_true[lag:]
+
+    return np.nan_to_num(y_pred, nan=0), np.nan_to_num(y_true_trim, nan=0)
 
 
 def mimo_FreeRun(ind, y_true, u):
@@ -219,18 +228,16 @@ def miso_MShooting(ind, k, y, u):
         y = y.reshape(-1, 1)
     if len(u.shape) == 1:
         u = u.reshape(-1, 1)
+    offset = 0 # 0 for INSTANT and 1 for normal u[k-1] 
 
     initial_conditions_size = ind.lagMax 
-    batch_size = initial_conditions_size + 1 + k
+    batch_size = initial_conditions_size + offset + k
     n_batchs = int(np.floor(u.shape[0] / batch_size))
     newshape = (n_batchs, batch_size, 1)
 
-    listU = []
-    for v in u.T:
-        listU.append(np.resize(v, newshape))
-
+    listU = [np.resize(v, newshape) for v in u.T]
     y_true = np.resize(y, newshape)
-    y_pred = y_true[:, :initial_conditions_size + 1, :]
+    y_pred = y_true[:, :initial_conditions_size + offset, :]
 
     for shooting in range(k):
 
@@ -241,14 +248,14 @@ def miso_MShooting(ind, k, y, u):
         for idx_output_equation in range(len(ind)):
 
             genetic_programming_term = ind._funcs[idx_output_equation]
-            listV = [y_pred[:, shooting:shooting + initial_conditions_size + 1, :]]
 
-            for v in listU:
+            y_window = [y_pred[:, shooting:shooting + initial_conditions_size, :]]
+            u_window = [v[:, shooting:shooting + initial_conditions_size + 1, :] for v in listU]
 
-                listV.append(v[:, shooting:shooting + initial_conditions_size + 1, :])
-            
+            listV = y_window + u_window
+
             out = genetic_programming_term(*listV)
-            out = out[:, initial_conditions_size:, :]
+            out = out[:, -1:, :]
             regressors.append(out)
 
         regressors = np.concatenate(regressors, axis=2)
