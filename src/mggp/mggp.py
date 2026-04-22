@@ -101,7 +101,7 @@ class MGGP:
         if self.nInputs > 1 and self.nOutputs == 1:
             self.mode = "MISO"
         elif self.nInputs > 1 and self.nOutputs > 1:
-            self.mode = "MIMO" if mode is 'NARX' else mode
+            self.mode = "MIMO" if mode == 'NARX' else mode
             # self.mode = "FIR"
         elif self.nInputs >= 1 and self.nOutputs > 1:
             self.mode = "FIR"
@@ -165,7 +165,6 @@ class MGGP:
 
     def _fir_align(self, eval_type: str) -> str:
         """
-        Só faz sentido para FIR.
         - OSA: usa u[k-1] -> y[k] (seu alinhamento antigo)
         - INSTANT: usa u[k] -> y[k]
         """
@@ -365,8 +364,9 @@ class MGGP:
         
                     if np.random.random() < self.pruning_probability:
                         self._apply_froe_pruning(ind)
-
-                    theta_value = ind.hysteretic_constrained_ls(self.outputs, self.inputs)
+                    
+                    align = self.evaluationType
+                    theta_value = ind.hysteretic_constrained_ls(self.outputs, self.inputs, align)
                     ind._theta = theta_value
 
                     if not self._check_hysteretic_constraints(ind):
@@ -379,6 +379,7 @@ class MGGP:
                             ind.leastSquares, self.outputs, self.inputs, align=align
                         )
                     else:
+                        
                         theta_value = ind.leastSquares(self.outputs, self.inputs)
 
                     ind._theta = theta_value
@@ -497,14 +498,11 @@ class MGGP:
             else:
                 theta_value = model.leastSquares(self.outputs, self.inputs)
 
-        # theta_value = model.leastSquares(self.outputs, self.inputs)
         model._theta = list(theta_value)
         
         self.save_model(model)
 
         try:
-            # print(model.to_equation())
-            # print("-------------------------------------")
             print(self.simplify_model(model))
         except:
             print("----------- Model -----------")
@@ -682,6 +680,9 @@ class MGGP:
                 cluster_sum = sum(theta[idx] for idx in clusters[cluster_type])
                 if abs(cluster_sum) > tol:
                     return False
+            
+            if len(clusters['cross_terms']) > 0: # Evitar termos cruzados ajuda a manter o ponto de equilíbrio
+                return False
                     
             return True
         except:
