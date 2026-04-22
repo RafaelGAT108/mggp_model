@@ -17,6 +17,38 @@ def sign(X1, X2):
 def sub(X1, X2):
     return X1 - X2
 
+def mcase_21(u, y_init):
+
+    u = np.asarray(u)
+    N = len(u)
+
+    y_pred = np.zeros(N)
+    terms = np.zeros((11, N))
+
+    y_pred[:3] = y_init[:3].reshape(-1)
+
+    for k in range(3, N):
+        y_pred[k] = (
+                # -1.24900e-16 * 
+                # 3.97151e-14 * sign(u[k] , u[k]) +
+                -2.14570e+00 * sign(u[k] , u[k-1]) * u[k] +
+                1.02547e+00 * y_pred[k-1] +
+                # 1.94289e-16 * u[k] +
+                -5.79036e-02 * (u[k] - u[k-1]) * u[k-2] +
+                -1.11516e-01 * sign(u[k-1] , u[k]) * sign(u[k] , u[k-1]) +
+                2.15428e+00 * u[k-1] * sign(u[k] , u[k-1]) +
+                -2.54746e-02 * y_pred[k-2] +
+                5.29324e+00 * (u[k] - u[k-1]) +
+                7.67350e-01 * sign(u[k] , u[k-1]) * u[k] * (u[k] - u[k-1]) +
+                7.22488e-01 * sign(u[k-2] , u[k-3]) +
+                7.49283e-02 * (u[k] - u[k-1]) * (u[k] - u[k-1]) 
+                # 0.00000e+00 * (u[k-1] - u[k-1]) +
+                # 0.00000e+00 * (u[k] - u[k]) * u[k] 
+        )
+
+    return y_pred[3:]
+    
+
 
 def mcase_free_run_terms(u, y_init):
     u = np.asarray(u)
