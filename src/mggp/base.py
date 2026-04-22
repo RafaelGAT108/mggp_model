@@ -22,13 +22,20 @@ from .predictors import mimo_OSA, mimo_FreeRun, mimo_MShooting, mimo_FIR_MShooti
 # from sklearn.preprocessing import LabelBinarizer
 import warnings
 warnings.filterwarnings('ignore')
-# import cupy as cp
-
 def _roll(*args, i):
     return np.roll(*args, shift=i)
 
 def sign(X1, X2):
     return np.sign(X1-X2)
+
+def tanh(X1, X2):
+    return np.tanh(X1-X2)
+
+def sin(X1):
+    return np.sin(X1)
+
+def div(X1, X2):
+    return X1 / X2
 
 class Element(object):
     def __init__(self,
@@ -40,7 +47,7 @@ class Element(object):
                  maxHeight: int = 5,
                  mode: str = "MISO",
                  single_delay_only: bool = False,
-                 operators: List[str] = ['mul', 'subtraction', 'sign']):
+                 operators: List[str] = ['mul', 'subtraction', 'sign', 'add', 'tanh', 'div', 'sin']):
         
         self._pset: gp.PrimitiveSet = None
         self._toolbox: base.Toolbox = None
@@ -70,6 +77,9 @@ class Element(object):
             "sign": (sign, 2),
             "subtraction": (operator.sub, 2),
             "add": (operator.add, 2),
+            "tanh": (tanh, 2),
+            "div": (div, 2),
+            "sin": (sin, 1)
         }
 
         self.iniciatePrimitivesSets()
@@ -347,10 +357,15 @@ class Individual(list):
         pass
 
 
-    def constrained_least_squares(self, y, u, p, constraints=None):
+    def constrained_least_squares(self, y, u, p, align='OSA', constraints=None):
                
         # p = self.makeRegressors(y, u)
-        yd = y[self.lagMax + 1:]
+        # if align == 'INSTANT':
+        #     yd = y[self.lagMax:]
+        # else:
+        #     yd = y[self.lagMax + 1:]
+        
+        yd = y[self.lagMax:]
         
         theta_ls = np.linalg.lstsq(p, yd, rcond=None)[0]
         
@@ -507,7 +522,7 @@ class Individual(list):
         return not any(op in tree_str for op in non_linear_ops)
     
 
-    def hysteretic_constrained_ls(self, y, u, tol=1e-8):
+    def hysteretic_constrained_ls(self, y, u, align='OSA', tol=1e-8):
         """Constrained LS enforcing the hysteretic equilibrium conditions (Property 1).
 
         Enforced constraints (paper Section 3):
@@ -556,7 +571,7 @@ class Individual(list):
         S = np.vstack([c[0] for c in constraints])
         c = np.array([c[1] for c in constraints])
 
-        return self.constrained_least_squares(y, u,p, {"S": S, "c": c})
+        return self.constrained_least_squares(y, u, p, align, {"S": S, "c": c})
 
 
     def predict_proba(self, mode="INSTANT", *args):
@@ -674,59 +689,69 @@ class Individual(list):
     def model2List(self):
         pass
 
-    def to_equation(self):
-        def checkbranch(branch):
-            if branch == []: return
-            if branch[-1][2] == branch[-1][1]:
-                del branch[-1]
-                if branch == []: return
-                branch[-1][2] += 1
-                return checkbranch(branch)
+
+    def parse_tree(self, tree, i=0, lag_acc=0):
+        node = tree[i]
+
+        if hasattr(node, "name") and node.name.startswith("q"):
+            k = int(node.name[1:])
+            return self.parse_tree(tree, i + 1, lag_acc + k)
+
+        elif isinstance(node, gp.Primitive):
+            args = []
+            next_i = i + 1
+
+            for _ in range(node.arity):
+                arg_str, next_i = self.parse_tree(tree, next_i, lag_acc)
+                args.append(arg_str)
+
+            if node.name == "mul":
+                return " * ".join(args), next_i
+
+            elif node.name == "subtraction":
+                return f"({args[0]} - {args[1]})", next_i
+
+            elif node.name == "sign":
+                return f"sign({args[0]} - {args[1]})", next_i
+
             else:
-                return
+                return f"{node.name}({', '.join(args)})", next_i
 
-        def checkOut():
-            string = ''
-            for k, program in enumerate(self):
-                string += 'Output %d:\n\n' % (k + 1)
-                string += f'{self.theta[k][0]:.5e} + \n'
-                for j, tree in enumerate(program):
-                    i = 0
-                    branches = []
-                    count = 0
-                    string += f'{self.theta[k][j+1]:.5e} * '
-                    while i < len(tree):
-                        if re.search("q\d", tree[i].name):
-                            count += int(tree[i].name[1:])
-                        elif type(tree[i]) == gp.Primitive:
-                            branches.append([count, tree[i].arity, 0])
-                            count = 0
-                        elif type(tree[i]) == gp.Terminal:
-                            if branches == []:
-                                lag = count
-                                string += str(tree[i].value) + '[i-%d] * ' % (count + 1)
-                            else:
-                                branches[-1][2] += 1
-                                lag = count + sum([item[0] for item in branches])
-                                string += tree[i].value + '[i-%d] * ' % (lag + 1)
+        elif isinstance(node, gp.Terminal):
+            var = node.value           
+            base = var
 
-                            count = 0
-                            checkbranch(branches)
+            if base == "u":
+                lag = lag_acc
+            elif base == "y":
+                lag = lag_acc + 1
+            else:
+                lag = lag_acc
 
-                        i += 1
-                    string = string[:-2] + '+ \n'
-                string += '\n'
-            return string
+            return f"{base}[k-{lag}]" if lag > 0 else f"{base}[k]", i + 1
 
-        # string = ''
-        # for j, out in enumerate(self):
-        #     string += f'\n\n Output %d:\n y_{j + 1}[k] = {self.theta[j][0]:.4e} ' % (j + 1)
-        #     # for k, tree in enumerate(out):
-        #     #      string += f'+ {self.theta[j][k+1]}*{str(tree)} '
-        #     string += ''.join([f'+ {self.theta[j][k + 1]:.4e}*{str(tree)} ' for k, tree in enumerate(out)])
-        #     string += '\n'
-        string = checkOut()
+        else:
+            return "", i + 1
+        
+
+    def to_equation(self):
+
+        string = ''
+
+        for k, program in enumerate(self):
+            string += f'Output {k+1}:\n\n'
+
+            # Bias da saída k
+            string += f'{self.theta[k][0]:.5e} + \n'
+
+            for j, tree in enumerate(program):
+                expr, _ = self.parse_tree(tree)
+                string += f'{self.theta[k][j+1]:.5e} * {expr} + \n'
+
+            string += '\n'
+
         return string
+
 
 
 #%% MISO Element Class
@@ -762,29 +787,42 @@ class IndividualSISO(Individual):
         else:
             raise Exception("Choose a mode between: OSA, FreeRun, MShooting")
     
-    def makeRegressors(self, y, u):
-        # Garante que y e u sejam arrays 2D
+    def makeRegressors(self, y, u, align = "OSA"):
+
         if len(y.shape) == 1:
             y = y.reshape(-1, 1)
         if len(u.shape) == 1:
             u = u.reshape(-1, 1)
-        
-        listV = [y[:-1].reshape(-1, 1), u[:-1].reshape(-1, 1)]
-        
-        p = np.ones((y.shape[0] - self.lagMax - 1, len(self) + 1))
-        
+                
+        N = y.shape[0]
+        n_samples = N - self.lagMax
+
+        if n_samples <= 0:
+            raise ValueError("Not enough samples for given lagMax.")
+
+        y_reg = y[self.lagMax - 1 : N - 1]   # y[k-1]
+        u_reg = u[self.lagMax : N]           # u[k]
+
+        listV = [y_reg.reshape(-1, 1), u_reg.reshape(-1, 1)]
+
+        p = np.ones((n_samples, len(self) + 1))
+
         for i in range(len(self)):
             func = self._funcs[i]
-            out = func(*listV)
-            p[:, i + 1] = out.reshape(-1)[self.lagMax:]
-        
+            out = func(*listV).reshape(-1)
+
+            if len(out) != n_samples:
+                raise ValueError(f"Inconsistent regressor size in term {i}: expected {n_samples}, got {len(out)}")
+
+            p[:, i + 1] = out
+                    
         return p
     
-    def leastSquares(self, y, u):
+    def leastSquares(self, y, u, align='OSA'):
         p = self.makeRegressors(y, u)
-        # if np.linalg.cond(p, -2) < 1e-10:
-        #     raise np.linalg.LinAlgError('Ill conditioned regressors matrix!')
-        yd = y[self.lagMax + 1:]
+
+        yd = y[self.lagMax:]
+
         self._theta = np.linalg.lstsq(p, yd, rcond=None)[0]
         if len(self._theta.shape) == 1:
             self._theta = self._theta.reshape(-1, 1)
@@ -796,6 +834,21 @@ class IndividualSISO(Individual):
     
     def model2List(self):
         return [str(tree) for tree in self]
+    
+    
+    def to_equation(self):
+
+        string = ''
+        # Bias
+        string += f"{self.theta[0][0]:.5e} + \n"
+
+        for j, tree in enumerate(self):
+            expr, _ = self.parse_tree(tree)
+            string += f"{self.theta[j+1][0]:.5e} * {expr} + \n"
+
+        return string
+
+
 
 
 class IndividualMISO(Individual):
@@ -937,33 +990,32 @@ class IndividualMIMO(Individual):
             u = u.reshape(-1, 1)
 
         if y.shape[1] == 1:
-            raise Exception('Wrong number of outputs. The algorithm is set',
-                            'for multiple outputs')
+            raise Exception('Wrong number of outputs. The algorithm is set for multiple outputs')
         
-        is_classification = bool(getattr(self, "_logistic_model", False))
+        # is_classification = bool(getattr(self, "_logistic_model", False))
         
         listV = []
         for v in y.T:
-            if is_classification:
-                listV.append(v.reshape(-1, 1))
+            # if is_classification:
+            listV.append(v.reshape(-1, 1))
 
-            else:
-                listV.append(v[:-1].reshape(-1, 1))
+            # else:
+            #     listV.append(v[:-1].reshape(-1, 1))
         
         for v in u.T:
-            if is_classification:
-                listV.append(v.reshape(-1, 1))
+            # if is_classification:
+            listV.append(v.reshape(-1, 1))
 
-            else:
-                listV.append(v[:-1].reshape(-1, 1))
+            # else:
+            #     listV.append(v[:-1].reshape(-1, 1))
 
         P = []
         for o in range(len(self)):
             
-            if is_classification:
-                n_samples = y.shape[0] - self.lagMax
-            else:
-                n_samples = y.shape[0] - self.lagMax - 1
+            # if is_classification:
+            n_samples = y.shape[0] - self.lagMax
+            # else:
+            #     n_samples = y.shape[0] - self.lagMax - 1
                 
             p = np.ones((n_samples, len(self[o]) + 1))
             for i in range(len(self[o])):
@@ -973,19 +1025,6 @@ class IndividualMIMO(Individual):
             P.append(p)
         return P
 
-
-    # def leastSquares(self, y, u):
-    #     '''
-    #     The leastSquare(y,u) function implements the Least Squares method
-    #     for parameter estimation.
-        
-    #     The arguments are the output y and the inputs u, in which each entry 
-    #     must be in column formm.
-    #     '''
-    #     P = self.makeRegressors(y, u)
-    #     self._theta = np.array([theta_mimo(P[o], y[self.lagMax + 1:, o]) for o in range(len(P))])
-
-    #     return self._theta
 
     def leastSquares(self, y, u):
         """
@@ -1000,24 +1039,13 @@ class IndividualMIMO(Individual):
 
         P = self.makeRegressors(y, u)
 
-        is_classification = bool(getattr(self, "_logistic_model", False))
-        offset = 0 if is_classification else 1  # <-- chave do alinhamento
+        # is_classification = bool(getattr(self, "_logistic_model", False))
+        # offset = 0 if is_classification else 1  # <-- chave do alinhamento
 
-        y_slice = y[self.lagMax + offset:, :]   # (N-lagMax) ou (N-lagMax-1)
+        y_slice = y[self.lagMax:, :]   # (N-lagMax) ou (N-lagMax-1)
 
         self._theta = np.array([theta_mimo(P[o], y_slice[:, o]) for o in range(len(P))])
         return self._theta
-
-    
-    # def to_equation(self):
-    #     string = ''
-    #     for j, out in enumerate(self):
-    #         string += f'\n\n Output %d:\n y_{j + 1}[k] = {self.theta[j][0]:.4e} ' % (j + 1)
-    #         # for k, tree in enumerate(out):
-    #         #      string += f'+ {self.theta[j][k+1]}*{str(tree)} '
-    #         string += ''.join([f'+ {self.theta[j][k + 1]:.4e}*{str(tree)} ' for k, tree in enumerate(out)])
-    #         string += '\n'
-    #     return string
 
     def __str__(self):
         string = ''
@@ -1101,18 +1129,16 @@ class IndividualFIR(Individual):
         if len(u.shape) == 1:
             u = u.reshape(-1, 1)
 
-        if align not in ("OSA", "INSTANT"):
-            raise ValueError("align must be 'OSA' or 'INSTANT'")
-
         listV = []
-        if align == "OSA":
-            for v in u.T:
-                listV.append(v[:-1].reshape(-1, 1))
-            n_samples = u.shape[0] - self.lagMax - 1
-        else:  # INSTANT
+        if align == 'INSTANT': 
             for v in u.T:
                 listV.append(v.reshape(-1, 1))
             n_samples = u.shape[0] - self.lagMax
+        
+        else:
+            for v in u.T:
+                listV.append(v[:-1].reshape(-1, 1))
+            n_samples = u.shape[0] - self.lagMax - 1
 
         if n_samples <= 0:
             raise ValueError("Not enough samples for the chosen lagMax/alignment.")
@@ -1135,12 +1161,11 @@ class IndividualFIR(Individual):
         if np.linalg.cond(p, -2) < 1e-10:
             raise np.linalg.LinAlgError('Ill conditioned regressors matrix!')
 
-        if align == "OSA":
-            yd = y[self.lagMax + 1:]
-        elif align == "INSTANT":
+        if align == "INSTANT":
             yd = y[self.lagMax:]
+
         else:
-            raise ValueError("align must be 'OSA' or 'INSTANT'")
+            yd = y[self.lagMax + 1:]
 
         self._theta = theta_fir(p, yd)
         if len(self._theta.shape) == 1:
@@ -1195,18 +1220,16 @@ class IndividualFIRMIMO(Individual):
         if len(u.shape) == 1:
             u = u.reshape(-1, 1)
 
-        if align not in ("OSA", "INSTANT"):
-            raise ValueError("align must be 'OSA' or 'INSTANT'")
-
         listV = []
-        if align == "OSA":
-            for v in u.T:
-                listV.append(v[:-1].reshape(-1, 1))
-            n_samples = u.shape[0] - self.lagMax - 1
-        else:  # INSTANT
+        if align == 'INSTANT':
             for v in u.T:
                 listV.append(v.reshape(-1, 1))
             n_samples = u.shape[0] - self.lagMax
+
+        else: 
+            for v in u.T:
+                listV.append(v[:-1].reshape(-1, 1))
+            n_samples = u.shape[0] - self.lagMax - 1
 
         if n_samples <= 0:
             raise ValueError("Not enough samples for the chosen lagMax/alignment.")
@@ -1224,12 +1247,11 @@ class IndividualFIRMIMO(Individual):
     def leastSquares(self, y, u, align="OSA"):
         P = self.makeRegressors(y, u, align=align)
 
-        if align == "OSA":
-            y_slice = y[self.lagMax + 1:, :]
-        elif align == "INSTANT":
+        if align == "INSTANT":
             y_slice = y[self.lagMax:, :]
+
         else:
-            raise ValueError("align must be 'OSA' or 'INSTANT'")
+            y_slice = y[self.lagMax + 1:, :]
 
         self._theta = np.array([theta_mimo(P[o], y_slice[:, o]) for o in range(len(P))])
         return self._theta
@@ -1259,3 +1281,4 @@ class IndividualFIRMIMO(Individual):
 
     def model2List(self):
         return [[str(tree) for tree in out] for out in self]
+    
