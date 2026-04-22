@@ -3,21 +3,53 @@
 [![Version](https://img.shields.io/badge/version-0.0.3-blue.svg)](https://github.com/RafaelGAT108/mggp_model/releases/tag/v0.0.3)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-A flexible implementation of **Multigene Genetic Programming (MGGP)** for both **regression** and **classification** tasks.
+A flexible and extensible implementation of **Multigene Genetic Programming (MGGP)** focused on **system identification** and **symbolic modeling**, supporting:
 
-## 📦 Version: v0.0.1 (Initial Release)
+- **Regression (static and dynamic systems)**
+- **Classification tasks**
+- **Dynamic models in NARX and FIR formulations**
+- **SISO, MISO, and MIMO system configurations**
 
-This is the first functional version of the project. It provides a solid foundation for symbolic regression and classification using evolutionary algorithms.
+---
 
-### What's included?
+## 📦 Version: v0.0.3 (Latest Release)
 
-- ✅ Regression problem support
-- ✅ Classification problem support  
-- ✅ Jupyter notebook with training examples
+This version introduces important improvements in **modeling capabilities**, **code clarity**, and **project structure**, moving the project closer to a fully packaged Python library.
 
-### ⚠️ Status
+### 🚀 What's new?
 
-> **Note:** This is an early release. There are many improvements, adjustments, and bug fixes planned for future versions. However, the main goal has been achieved: delivering a **functional version** that works for both regression and classification problems.
+- ✅ **Improved readability of Free-Run and Multi-Shooting (MShooting) implementations**  
+  - Clearer iteration flow  
+  - Explicit batch handling in MShooting  
+  - Consistent behavior across **SISO, MISO, and MIMO**
+
+- ✅ **Support for current input term `u[k]`**  
+  Previously, models only considered delayed inputs (`u[k-1], ..., u[k-lagMax]`).  
+  Including `u[k]` significantly enhances the expressive power of the identified models.
+
+- ✅ **Advancements toward packaging as a Python library**  
+  Internal refactoring and structural improvements preparing for future PyPI release.
+
+- ✅ **Improved symbolic simplification for SISO models**  
+  Cleaner and more interpretable final equations.
+
+- ✅ **General code cleanup and notebook reorganization**
+
+---
+
+
+## 🧠 Core Features
+
+- Symbolic regression via **Multigene Genetic Programming**
+- Support for **dynamic system identification (NARX / FIR)**
+- Native handling of:
+  - SISO (Single Input Single Output)
+  - MISO (Multiple Input Single Output)
+  - MIMO (Multiple Input Multiple Output)
+- Free-run simulation and **multi-shooting training strategies**
+- Interpretable model structures (explicit equations)
+
+---
 
 ## 🚀 Quick Start
 
