@@ -1,6 +1,6 @@
 # MGGP (Multigene Genetic Programming)
 
-[![Version](https://img.shields.io/badge/version-0.0.1-blue.svg)](https://github.com/RafaelGAT108/mggp_model/releases/tag/v0.0.1)
+[![Version](https://img.shields.io/badge/version-0.0.3-blue.svg)](https://github.com/RafaelGAT108/mggp_model/releases/tag/v0.0.3)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 A flexible implementation of **Multigene Genetic Programming (MGGP)** for both **regression** and **classification** tasks.
