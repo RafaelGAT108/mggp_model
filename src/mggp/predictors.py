@@ -121,53 +121,57 @@ def miso_FreeRun(ind, y_true, u):
 
 def mimo_FreeRun(ind, y_true, u):
     """
-    Implements the Free-Run predictor for MIMO models.
-    Args:
-        ind: C_Individual object (MIMO).
-        y0: Initial conditions (n_outputs x history).
-        u: Input data (n_samples x n_inputs).
-    Returns:
-        y_pred: Predicted outputs (n_samples x n_outputs).
-        y_true: Ground truth (trimmed to match y_pred).
+    Free-Run predictor for MIMO models (consistente com u[k] e y[k-1])
     """
-    if len(u.shape) == 1:
+
+    if u.ndim == 1:
         u = u.reshape(-1, 1)
-    if len(y_true.shape) == 1:
+    if y_true.ndim == 1:
         y_true = y_true.reshape(-1, 1)
 
+    lag = ind.lagMax
     n_samples = u.shape[0]
     n_outputs = y_true.shape[1]
-    initial_conditions_size = ind.lagMax
-    
-    y_pred = np.zeros((n_samples - initial_conditions_size, n_outputs))
-    y_history = np.ones((initial_conditions_size + 1, n_outputs))
 
-    for step in tqdm(range(n_samples - ind.lagMax), desc="Processing iterations in FreeRun"):
+    y = y_true[:lag, :].copy()
 
-        listV = []
-        
-        for v in y_history.T:
-            listV.append(v[step:step + initial_conditions_size + 1].reshape(-1, 1))
+    y_pred = []
 
-        for v in u.T:
-            listV.append(v[step:step + initial_conditions_size + 1].reshape(-1, 1))
+    for k in range(lag, n_samples):
 
-        for idx_output in range(n_outputs):
+        y_windows = [y[k - lag:k, i:i+1] for i in range(n_outputs)]
+        u_windows = [u[k - lag:k + 1, j:j+1] for j in range(u.shape[1])]
+
+        listV = y_windows + u_windows
+
+        yk_all_outputs = []
+
+        for idx_output in range(len(ind)):
+
             regressors = [1.0]  # bias
 
-            for idx_equation_tree in range(len(ind[idx_output])):
+            for j in range(len(ind[idx_output])):
 
-                genetic_programming_term = ind._funcs[idx_output][idx_equation_tree]
-                out = genetic_programming_term(*listV)
-                regressors.append(float(out[-1])) 
-            
-            y_pred[step, idx_output] = np.dot(regressors, ind._theta[idx_output])
+                func = ind._funcs[idx_output][j]
+                out = func(*listV)
 
-        y_history = np.column_stack([y_history.T, y_pred[step, :]]).T
+                regressors.append(float(out[-1]))
 
-    y_true = y_true[ind.lagMax:, :]
-    return np.nan_to_num(y_pred, nan=-100_000), np.nan_to_num(y_true, nan=-100_000)
+            theta_k = ind.theta[idx_output]
+            yk = np.dot(regressors, theta_k)
 
+            yk_all_outputs.append(yk)
+
+        yk_all_outputs = np.array(yk_all_outputs).reshape(1, -1)
+
+        y = np.vstack((y, yk_all_outputs))
+        y_pred.append(yk_all_outputs)
+
+    y_pred = np.vstack(y_pred)  # (n_samples-lag, n_outputs)
+    y_true_trim = y_true[lag:, :]
+
+    return np.nan_to_num(y_pred, nan=0), np.nan_to_num(y_true_trim, nan=0)
+    
 
 def mimo_FIR_FreeRun(ind, y_true, u):
     """
@@ -228,16 +232,15 @@ def miso_MShooting(ind, k, y, u):
         y = y.reshape(-1, 1)
     if len(u.shape) == 1:
         u = u.reshape(-1, 1)
-    offset = 0 # 0 for INSTANT and 1 for normal u[k-1] 
 
     initial_conditions_size = ind.lagMax 
-    batch_size = initial_conditions_size + offset + k
+    batch_size = initial_conditions_size + k
     n_batchs = int(np.floor(u.shape[0] / batch_size))
     newshape = (n_batchs, batch_size, 1)
 
     listU = [np.resize(v, newshape) for v in u.T]
     y_true = np.resize(y, newshape)
-    y_pred = y_true[:, :initial_conditions_size + offset, :]
+    y_pred = y_true[:, :initial_conditions_size , :]
 
     for shooting in range(k):
 
@@ -266,55 +269,54 @@ def miso_MShooting(ind, k, y, u):
 
 def mimo_MShooting(ind, k, y, u):
     """
-    Implements the Multiple-Shooting predictor for MIMO models
-    Arguments:
-        ind = C_Individual object
-        k   = steps ahead prediction for each 'shooting'
-        y   = n-dimensional array with output data
-        u   = m-dimensional array with input data
+    Multiple-Shooting predictor for MIMO models
     """
+
     if len(y.shape) == 1:
         y = y.reshape(-1, 1)
     if len(u.shape) == 1:
         u = u.reshape(-1, 1)
-    
-    initial_conditions_size = ind.lagMax 
-    batch_size = initial_conditions_size + 1 + k
-    n_batchs = int(np.floor(u.shape[0] / batch_size))
-    newshape = (n_batchs, batch_size, 1)
 
-    listU = []
-    for v in u.T:
-        listU.append(np.resize(v, newshape))
+    initial_conditions_size = ind.lagMax
+    batch_size = initial_conditions_size + k
+    n_batchs = int(np.floor(u.shape[0] / batch_size))
+
+    newshape_u = (n_batchs, batch_size, 1)
+    listU = [np.resize(v, newshape_u) for v in u.T]
 
     y_true = np.resize(y, (n_batchs, batch_size, y.shape[1]))
-    y_pred = y_true[:, :initial_conditions_size + 1, :]
+    y_pred = y_true[:, :initial_conditions_size, :]
 
     for shooting in range(k):
 
-        listV = []
-        for v in y_pred.T:
-            listV.append(v.T[:, shooting:shooting + initial_conditions_size + 1].reshape(n_batchs, -1, 1))
-        
-        for v in listU:
-            listV.append(v[:, shooting:shooting + initial_conditions_size + 1, 0].reshape(n_batchs, -1, 1))
-
         predictions_for_output_equation = []
-        for idx_output_equation in range(len(ind)): # for output_equation in ind
+
+        for idx_output_equation in range(len(ind)):
 
             regressors = []
+
+            # bias
             out = np.ones((n_batchs, 1, 1))
             regressors.append(out)
 
-            for idx_equation_tree in range(len(ind[idx_output_equation])): # for equation_tree in output_equation
+            y_window = [y_pred[:, shooting:shooting + initial_conditions_size, i:i+1] for i in range(y.shape[1])]
+            u_window = [v[:, shooting:shooting + initial_conditions_size + 1, :] for v in listU]
 
-                genetic_programming_term = ind._funcs[idx_output_equation][idx_equation_tree] # genetic_programming_term = equation_tree._funcs
+            listV = y_window + u_window
+
+            for idx_tree in range(len(ind[idx_output_equation])):
+
+                genetic_programming_term = ind._funcs[idx_output_equation][idx_tree]
                 out = genetic_programming_term(*listV)
-                out = out[:, initial_conditions_size:, :]
+                out = out[:, -1:, :]
+
                 regressors.append(out)
 
             regressors = np.concatenate(regressors, axis=2)
-            output_pred = np.dot(regressors, ind._theta[idx_output_equation].T).reshape(-1, 1, 1)
+
+            theta_k = ind.theta[idx_output_equation] 
+            output_pred = np.dot(regressors, theta_k.T).reshape(n_batchs, 1, 1)
+
             predictions_for_output_equation.append(output_pred)
 
         predictions_for_output_equation = np.concatenate(predictions_for_output_equation, axis=2)
