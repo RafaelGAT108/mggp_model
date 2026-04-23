@@ -15,6 +15,7 @@ from deap import gp, creator, base, tools
 import operator
 import numpy as np
 import re
+from .base import Individual
 from sklearn.metrics import mean_squared_error, accuracy_score, log_loss
 from numba import njit
 from .predictors import miso_OSA, miso_FreeRun, miso_MShooting, mimo_CLASSIFY, miso_FIR_INSTANT, mimo_FIR_INSTANT, miso_CLASSIFY
@@ -89,20 +90,22 @@ class Element(object):
         self._nOutputs = nOutputs
         self._maxHeight = maxHeight     
 
-        creator.create("Program", gp.PrimitiveTree, fitness=None,
-                       pset=self.pset)
+        creator.create("Program", gp.PrimitiveTree, fitness=None, pset=self.pset)
         creator.create("FitnessMin", base.Fitness, weights=self._weights)
 
         if self._mode == "MISO":
             creator.create("Individual", IndividualMISO, fitness=creator.FitnessMin)
+
         elif self._mode == "MIMO":
             creator.create("Individual", IndividualMIMO, fitness=creator.FitnessMin)
+
         elif self._mode == "SISO":
             creator.create("Individual", IndividualSISO, fitness=creator.FitnessMin)
 
         elif self._mode == "FIR":
             if nOutputs == 1:
                 creator.create("Individual", IndividualFIR, fitness=creator.FitnessMin)
+
             else:
                 creator.create("Individual", IndividualFIRMIMO, fitness=creator.FitnessMin)
         else:
@@ -110,7 +113,7 @@ class Element(object):
         self.iniciateToolbox()
 
 
-    def iniciatePrimitivesSets(self):
+    def iniciatePrimitivesSets(self) -> None:
         
         self._pset = gp.PrimitiveSet("main", self._nVar)
         
@@ -133,9 +136,9 @@ class Element(object):
             self._pset.addPrimitive(partial(_roll, i=1), 1, name=f'q1')
 
 
-    def iniciateToolbox(self):
+    def iniciateToolbox(self) -> None:
 
-        def generate_terminal_only():
+        def generate_terminal_only() -> gp.PrimitiveTree:
             """Retorna uma árvore com apenas um nó terminal escolhido aleatoriamente"""
             
             terminal_index = random.randint(1, self._nVar)
@@ -176,7 +179,7 @@ class Element(object):
         self._toolbox.register("population", tools.initRepeat, list, self._toolbox.individual)
 
 
-    def genGrowLimitedNodes(self, pset, min_depth, max_depth, max_nodes):
+    def genGrowLimitedNodes(self, pset: gp.PrimitiveSet, min_depth: int, max_depth: int, max_nodes: int) -> List:
         """Versão do genGrow com limite de nós"""
         while True:
             expr = gp.genHalfAndHalf(pset, min_depth, max_depth)
@@ -186,20 +189,24 @@ class Element(object):
 
 
     @property
-    def pset(self):
+    def pset(self) -> gp.PrimitiveSet:
         return self._pset
+    
 
     @property
-    def toolbox(self):
+    def toolbox(self) -> base.Toolbox:
         return self._toolbox
 
-    def renameArguments(self, dictionary={'ARG0': 'y', 'ARG1': 'u'}):
+
+    def renameArguments(self, dictionary: dict = {'ARG0': 'y', 'ARG1': 'u'}) -> None:
         self._pset.renameArguments(**dictionary)
 
-    def addPrimitive(self, *args):
+
+    def addPrimitive(self, *args: tuple) -> None:
         self._pset.addPrimitive(*args)
 
-    def buildModelFromList(self, listString):
+
+    def buildModelFromList(self, listString: List[str]) -> Individual:
         model = creator.Individual()
 
         if self._mode == "SISO":
@@ -216,10 +223,12 @@ class Element(object):
                 model.append(aux)
         return model
 
-    def buildRandomModel(self):
+
+    def buildRandomModel(self) -> Individual:
         return self._toolbox.individual()
 
-    def compileModel(self, model):
+
+    def compileModel(self, model) -> None:
         if self._mode == 'SISO':
             model._funcs = [gp.compile(tree, self.pset) for tree in model]
 
@@ -232,8 +241,10 @@ class Element(object):
 
         self._setModelLagMax(model)
 
-    def _compile_to_function(self, expr, pset):
+
+    def _compile_to_function(self, expr, pset: gp.PrimitiveSet) -> dict:
         code = str(expr)
+
         if len(pset.arguments) > 0:
             args = ",".join(arg for arg in pset.arguments)
             code = f"def generated_function({args}):\n    return {code}"
@@ -242,13 +253,12 @@ class Element(object):
         try:
             exec(code, pset.context, local_scope)
             return local_scope["generated_function"]
+        
         except MemoryError:
             _, _, traceback = sys.exc_info()
-            raise MemoryError(
-                "DEAP: Error in tree evaluation: Python cannot evaluate a tree higher than 90. "
+            raise MemoryError("DEAP: Error in tree evaluation: Python cannot evaluate a tree higher than 90. "
                 "To avoid this problem, you should use bloat control on your operators. "
-                "See the DEAP documentation for more information. "
-                "DEAP will now abort."
+                "See the DEAP documentation for more information. DEAP will now abort."
             ).with_traceback(traceback)
 
 
@@ -307,13 +317,15 @@ class Element(object):
                 aux.append(checkOut(out))
             model.lagMax = max(aux)
 
-    #---save-load-file-function---------------------------------------------------------
-    def save(self, filename, dictionary):
+
+    def save(self, filename: str, dictionary: dict) -> None:
+        
         with open(filename, 'wb') as f:
             pickle.dump(dictionary, f)
             f.close()
 
-    def load(self, filename):
+    def load(self, filename: str) -> dict:
+        
         with open(filename, 'rb') as f:
             o = pickle.load(f)
             f.close()
@@ -321,7 +333,7 @@ class Element(object):
 
 
 class Individual(list):
-    def __init__(self, data=[]):
+    def __init__(self, data: List = []):
         super().__init__(data)
         self._funcs = []
         self._lagMax = None
@@ -349,22 +361,16 @@ class Individual(list):
         self._lagMax = lag
 
     @abstractmethod
-    def makeRegressors(self, y, u):
+    def makeRegressors(self, y: np.ndarray, u: np.ndarray):
         pass
 
     @abstractmethod
-    def leastSquares(self, y, u):
+    def leastSquares(self, y: np.ndarray, u: np.ndarray):
         pass
 
 
-    def constrained_least_squares(self, y, u, p, align='OSA', constraints=None):
-               
-        # p = self.makeRegressors(y, u)
-        # if align == 'INSTANT':
-        #     yd = y[self.lagMax:]
-        # else:
-        #     yd = y[self.lagMax + 1:]
-        
+    def constrained_least_squares(self, y: np.ndarray, u: np.ndarray, p: np.ndarray, align: str ='OSA', constraints=None) -> np.ndarray:
+
         yd = y[self.lagMax:]
         
         theta_ls = np.linalg.lstsq(p, yd, rcond=None)[0]
@@ -389,7 +395,7 @@ class Individual(list):
         return self._theta
     
 
-    def identify_term_clusters(self, y, u):
+    def identify_term_clusters(self, y: np.ndarray, u: np.ndarray) -> dict:
         """Identify regressor term clusters used by the hysteretic constraints (Property 1).
 
         The paper groups parameters into clusters and enforces:
@@ -425,13 +431,16 @@ class Individual(list):
 
         return clusters
 
+
     @staticmethod
     def _node_is_q(node) -> bool:
         return isinstance(node, gp.Primitive) and re.fullmatch(r"q\d+", getattr(node, "name", "")) is not None
 
+
     @staticmethod
     def _node_is_phi(node) -> bool:
         return isinstance(node, gp.Primitive) and getattr(node, "name", "") in ("subtraction", "sign")
+
 
     @staticmethod
     def _terminal_value_str(term) -> str:
@@ -440,13 +449,15 @@ class Individual(list):
             v = getattr(term, "name", "")
         return str(v)
 
+
     def _tree_contains_var(self, tree, var_prefix: str) -> bool:
         for node in tree:
             if isinstance(node, gp.Terminal) and self._terminal_value_str(node).startswith(var_prefix):
                 return True
         return False
 
-    def _tree_has_only_q_and_var(self, tree, var_prefix: str, require_at_least_one_q: bool = True) -> bool:
+
+    def _tree_has_only_q_and_var(self, tree: gp.PrimitiveTree, var_prefix: str, require_at_least_one_q: bool = True) -> bool:
         q_count = 0
         term_count = 0
 
@@ -469,6 +480,7 @@ class Individual(list):
             return False
         return True
 
+
     def _is_linear_term(self, tree_str: str = None, tree=None) -> bool:
         """Backward-compatible linearity check.
 
@@ -477,12 +489,13 @@ class Individual(list):
         """
         if tree is None:
             return False
+        
         return (
             self._tree_has_only_q_and_var(tree, "y", require_at_least_one_q=True)
             or self._tree_has_only_q_and_var(tree, "u", require_at_least_one_q=True)
         )
 
-    def _classify_term(self, term_index):
+    def _classify_term(self, term_index: int) -> str:
         """
         Classifica um termo baseado em sua estrutura
         """
@@ -516,13 +529,13 @@ class Individual(list):
         return 'phi_terms'  # Default
 
 
-    def _is_linear_term(self, tree_str):
+    def _is_linear_term(self, tree_str: str) -> bool:
         """Verifica se o termo é linear (apenas multiplicações básicas)"""
         non_linear_ops = ['sign', 'subtraction', 'mul(mul', 'mul(q', 'mul(']
         return not any(op in tree_str for op in non_linear_ops)
     
 
-    def hysteretic_constrained_ls(self, y, u, align='OSA', tol=1e-8):
+    def hysteretic_constrained_ls(self, y: np.ndarray, u: np.ndarray, align: str ='OSA', tol: float =1e-8) -> np.ndarray:
         """Constrained LS enforcing the hysteretic equilibrium conditions (Property 1).
 
         Enforced constraints (paper Section 3):
@@ -544,9 +557,7 @@ class Individual(list):
             constraints.append((s, 0.0))
 
         if not clusters["linear_output"]:
-            raise ValueError(
-                "No linear output term (pure delay of y) found. Property-1 constraints cannot be enforced."
-            )
+            raise ValueError("No linear output term (pure delay of y) found. Property-1 constraints cannot be enforced.")
 
         s = np.zeros(length_model)
         s[clusters["linear_output"]] = 1.0
@@ -574,17 +585,19 @@ class Individual(list):
         return self.constrained_least_squares(y, u, p, align, {"S": S, "c": c})
 
 
-    def predict_proba(self, mode="INSTANT", *args):
+    def predict_proba(self, mode: str ="INSTANT", *args: tuple) -> tuple[np.ndarray, np.ndarray]:
         """Predição de probabilidades para classificação"""
-        def one_hot_argmax(x):
+
+        def one_hot_argmax(x: np.ndarray) -> np.ndarray:
 
             result = np.zeros_like(x)
             result[np.argmax(x)] = 1
             
             return result
     
-        def softmax(x):
+        def softmax(x: np.ndarray) -> np.ndarray:
             """Calcula softmax para cada linha do vetor de entrada x."""
+
             e_x = np.exp(x - np.max(x))
             return e_x / e_x.sum()
         
@@ -610,7 +623,7 @@ class Individual(list):
             raise Exception("Logistic regression model not trained!")
 
 
-    def predict_classes(self, mode="INSTANT", *args):
+    def predict_classes(self, mode: str ="INSTANT", *args: tuple) -> tuple[np.ndarray, np.ndarray]:
         """Predição de classes"""
         
         # probabilities, y_true = self.predict_proba(mode, *args)
@@ -621,7 +634,7 @@ class Individual(list):
         return predicted_classes, y_true
 
 
-    def score_classification(self, yd, yp, mode="accuracy"):
+    def score_classification(self, yd: np.ndarray, yp: np.ndarray, mode: str ="accuracy") -> float:
         """Métricas de avaliação para classificação"""
         
         if mode == "accuracy":
@@ -638,17 +651,22 @@ class Individual(list):
         else:
             raise ValueError("Choose a valid metric: accuracy, log_loss, f1_macro")
 
-    def predict(self, mode="OSA", *args):
+    
+    def predict(self, mode: str = "OSA", *args: tuple) -> tuple[np.ndarray, np.ndarray]:
         if mode == "OSA":
             return mimo_OSA(self, *args)
+        
         if mode == "FreeRun":
             return mimo_FreeRun(self, *args)
+        
         if mode == "MShooting":
             return mimo_MShooting(self, *args)
+        
         else:
             raise Exception("Choose a mode between: OSA, FreeRun, MShooting")
 
-    def _mape(self, yd, yp):
+    
+    def _mape(self, yd: np.ndarray, yp: np.ndarray) -> float:
         """MAPE Calculate in the array form."""
         diff = np.abs(yd - yp)
         denominator = np.abs(np.max(yd, axis=0) - np.min(yd, axis=0))
@@ -657,12 +675,14 @@ class Individual(list):
         mape_per_output = 100 * np.nanmean(diff / safe_denominator, axis=0)
         return np.nanmean(mape_per_output) 
 
-    def _compute_metric_per_output(self, yd, yp, metric_func):
+    
+    def _compute_metric_per_output(self, yd: np.ndarray, yp: np.ndarray, metric_func: callable) -> float:
         """Apply a metric (MSE, RMSE) in each output and return the mean"""
         return np.mean([metric_func(yd[:, i], yp[:, i]) for i in range(yd.shape[1])])
         # return max([metric_func(yd[:, i], yp[:, i]) for i in range(yd.shape[1])])
 
-    def score(self, yd, yp, mode="MSE"):
+    
+    def score(self, yd: np.ndarray, yp: np.ndarray, mode: str ="MSE"):
         """Calculate the error metric choosed (MSE, MAPE, RMSE)."""
         if mode not in ["MSE", "NMSE", "MAPE", "RMSE"]:
             raise ValueError("Choose a valid metric: MSE, NMSE, MAPE or RMSE")
@@ -679,18 +699,20 @@ class Individual(list):
         if mode == "NMSE":
             return self._compute_metric_per_output(yd, yp, self._nmse_variance)
         
-    def _nmse_variance(self, y_true, y_pred):
+    
+    def _nmse_variance(self, y_true, y_pred) -> float:
 
         mse = mean_squared_error(y_true, y_pred)
         variance = np.var(y_true)
         return mse / variance if variance != 0 else mse
+
 
     @abstractmethod
     def model2List(self):
         pass
 
 
-    def parse_tree(self, tree, i=0, lag_acc=0):
+    def parse_tree(self, tree: gp.PrimitiveTree, i: int = 0, lag_acc: int = 0) -> tuple[str, int]:
         node = tree[i]
 
         if hasattr(node, "name") and node.name.startswith("q"):
@@ -734,7 +756,7 @@ class Individual(list):
             return "", i + 1
         
 
-    def to_equation(self):
+    def to_equation(self) -> str:
 
         string = ''
 
@@ -753,8 +775,6 @@ class Individual(list):
         return string
 
 
-
-#%% MISO Element Class
 @njit
 def theta_miso(p, yd):
     return np.linalg.inv(p.T @ p) @ p.T @ yd
@@ -774,20 +794,24 @@ def theta_fir(p, yd):
 
 class IndividualSISO(Individual):
     
-    def __init__(self, data=[]):
+    def __init__(self, data: str = []):
         super().__init__(data)
     
-    def predict(self, mode="OSA", *args):
+    def predict(self, mode: str = "OSA", *args)  -> tuple[np.ndarray, np.ndarray]:
         if mode == "OSA":
             return miso_OSA(self, *args)
+        
         if mode == "FreeRun":
             return miso_FreeRun(self, *args)
+        
         if mode == "MShooting":
             return miso_MShooting(self, *args)
+        
         else:
             raise Exception("Choose a mode between: OSA, FreeRun, MShooting")
     
-    def makeRegressors(self, y, u, align = "OSA"):
+
+    def makeRegressors(self, y: np.ndarray, u: np.ndarray, align: str = "OSA") -> np.ndarray:
 
         if len(y.shape) == 1:
             y = y.reshape(-1, 1)
@@ -818,7 +842,8 @@ class IndividualSISO(Individual):
                     
         return p
     
-    def leastSquares(self, y, u, align='OSA'):
+    
+    def leastSquares(self, y: np.ndarray, u: np.ndarray, align: str ='OSA') -> np.ndarray:
         p = self.makeRegressors(y, u)
 
         yd = y[self.lagMax:]
@@ -828,15 +853,17 @@ class IndividualSISO(Individual):
             self._theta = self._theta.reshape(-1, 1)
         return self._theta
     
-    def __str__(self):
+
+    def __str__(self) -> str:
         string = ''.join('%s\n' * len(self)) % tuple([str(tree) for tree in self])
         return '1\n' + string
     
-    def model2List(self):
+
+    def model2List(self) -> List[str]:
         return [str(tree) for tree in self]
     
     
-    def to_equation(self):
+    def to_equation(self) -> str:
 
         string = ''
         # Bias
@@ -853,16 +880,19 @@ class IndividualSISO(Individual):
 
 class IndividualMISO(Individual):
 
-    def __init__(self, data=[]):
+    def __init__(self, data: str = []):
         super().__init__(data)
 
-    def predict(self, mode="OSA", *args):
+    def predict(self, mode: str = "OSA", *args: tuple) -> tuple[np.ndarray, np.ndarray]:
         if mode == "OSA":
             return miso_OSA(self, *args)
+        
         if mode == "FreeRun":
             return miso_FreeRun(self, *args)
+        
         if mode == "MShooting":
             return miso_MShooting(self, *args)
+        
         else:
             raise Exception("Choose a mode between: OSA, FreeRun, MShooting")
 
@@ -904,7 +934,7 @@ class IndividualMISO(Individual):
 
 
 
-    def makeRegressors(self, y, u):
+    def makeRegressors(self, y: np.ndarray, u: np.ndarray) -> np.ndarray:
         if len(y.shape) == 1:
             y = y.reshape(-1, 1)
         if len(u.shape) == 1:
@@ -931,6 +961,7 @@ class IndividualMISO(Individual):
         
         if is_classification:
             n_samples = y.shape[0] - self.lagMax
+
         else:
             n_samples = y.shape[0] - self.lagMax - 1
             
@@ -944,7 +975,7 @@ class IndividualMISO(Individual):
         return p
 
 
-    def leastSquares(self, y, u):
+    def leastSquares(self, y: np.ndarray, u: np.ndarray) -> np.ndarray:
         '''
         The leastSquare(y,u) function implements the Least Squares method
         for parameter estimation.
@@ -966,11 +997,13 @@ class IndividualMISO(Individual):
             self._theta = self._theta.reshape(-1, 1)
         return self._theta
 
-    def __str__(self):
+
+    def __str__(self) -> str:
         string = ''.join('%s\n' * len(self)) % tuple([str(tree) for tree in self])
         return '1\n' + string
 
-    def model2List(self):
+
+    def model2List(self) -> List[str]:
         listString = []
         for tree in self:
             listString.append(str(tree))
@@ -979,11 +1012,11 @@ class IndividualMISO(Individual):
 
 
 class IndividualMIMO(Individual):
-    def __init__(self, data=[]):
+    def __init__(self, data: str = []):
         super().__init__(data)
 
     
-    def makeRegressors(self, y, u):
+    def makeRegressors(self, y: np.ndarray, u: np.ndarray) -> np.ndarray:
         if len(y.shape) == 1:
             y = y.reshape(-1, 1)
         if len(u.shape) == 1:
@@ -1026,7 +1059,7 @@ class IndividualMIMO(Individual):
         return P
 
 
-    def leastSquares(self, y, u):
+    def leastSquares(self, y: np.ndarray, u: np.ndarray) -> np.ndarray:
         """
         LS para MIMO.
         Em classificação, y_true deve alinhar com P (N - lagMax).
@@ -1047,7 +1080,8 @@ class IndividualMIMO(Individual):
         self._theta = np.array([theta_mimo(P[o], y_slice[:, o]) for o in range(len(P))])
         return self._theta
 
-    def __str__(self):
+
+    def __str__(self) -> str:
         string = ''
         i = 1
         for out in self:
@@ -1058,13 +1092,14 @@ class IndividualMIMO(Individual):
             string += '\n'
         return string
 
-    def model2List(self):
+
+    def model2List(self) -> List[List[str]]:
         return [[str(tree) for tree in out] for out in self]
 
 
 class IndividualFIR(Individual):
 
-    def __init__(self, data=[]):
+    def __init__(self, data: str = []):
         super().__init__(data)
 
     # def predict(self, mode="OSA", *args):
@@ -1112,20 +1147,24 @@ class IndividualFIR(Individual):
     #         self._theta = self._theta.reshape(-1, 1)
     #     return self._theta
 
-    def predict(self, mode="OSA", *args):
+    def predict(self, mode: str ="OSA", *args: tuple) -> tuple[np.ndarray, np.ndarray]:
         if mode == "OSA":
             return miso_OSA(self, *args)
+        
         if mode == "INSTANT":
             return miso_FIR_INSTANT(self, *args)
+        
         if mode == "FreeRun":
             return miso_FreeRun(self, *args)
+        
         if mode == "MShooting":
             return miso_MShooting(self, *args)
+        
         else:
             raise Exception("Choose a mode between: OSA, INSTANT, FreeRun, MShooting")
 
 
-    def makeRegressors(self, y, u, align="OSA"):
+    def makeRegressors(self, y: np.ndarray, u: np.ndarray, align: str = "OSA") -> np.ndarray:
         if len(u.shape) == 1:
             u = u.reshape(-1, 1)
 
@@ -1149,10 +1188,11 @@ class IndividualFIR(Individual):
             func = self._funcs[i]
             out = func(*listV)
             p[:, i + 1] = out.reshape(-1)[self.lagMax:]
+
         return p
 
 
-    def leastSquares(self, y, u, align="OSA"):
+    def leastSquares(self, y: np.ndarray, u: np.ndarray, align: str ="OSA") -> np.ndarray:
         """
         FIR LS com alinhamento consistente com a predição.
         """
@@ -1170,17 +1210,18 @@ class IndividualFIR(Individual):
         self._theta = theta_fir(p, yd)
         if len(self._theta.shape) == 1:
             self._theta = self._theta.reshape(-1, 1)
+
         return self._theta
 
-    def __str__(self):
+    def __str__(self) -> str:
         string = ''.join('%s\n' * len(self)) % tuple([str(tree) for tree in self])
         return '1\n' + string
 
-    def model2List(self):
+    def model2List(self) -> List[str]:
         return [str(tree) for tree in self]
 
 class IndividualFIRMIMO(Individual):
-    def __init__(self, data=[]):
+    def __init__(self, data: list = []):
         super().__init__(data)
 
     # def makeRegressors(self, y, u):
@@ -1216,7 +1257,7 @@ class IndividualFIRMIMO(Individual):
     #     else:
     #         raise Exception("Choose a mode between: OSA, FreeRun, MShooting")
 
-    def makeRegressors(self, y, u, align="OSA"):
+    def makeRegressors(self, y: np.ndarray, u: np.ndarray, align: str ="OSA") -> List[np.ndarray]:
         if len(u.shape) == 1:
             u = u.reshape(-1, 1)
 
@@ -1237,14 +1278,16 @@ class IndividualFIRMIMO(Individual):
         P = []
         for o in range(len(self)):  # Para cada saída
             p = np.ones((n_samples, len(self[o]) + 1))
+            
             for i in range(len(self[o])):  # Para cada termo da saída
                 func = self._funcs[o][i]
                 out = func(*listV)
                 p[:, i + 1] = out.reshape(-1)[self.lagMax:]
+            
             P.append(p)
         return P
 
-    def leastSquares(self, y, u, align="OSA"):
+    def leastSquares(self, y: np.ndarray, u: np.ndarray, align: str ="OSA") -> np.ndarray:
         P = self.makeRegressors(y, u, align=align)
 
         if align == "INSTANT":
@@ -1256,7 +1299,7 @@ class IndividualFIRMIMO(Individual):
         self._theta = np.array([theta_mimo(P[o], y_slice[:, o]) for o in range(len(P))])
         return self._theta
 
-    def predict(self, mode="OSA", *args):
+    def predict(self, mode: str ="OSA", *args: tuple) -> tuple[np.ndarray, np.ndarray]:
         if mode == "OSA":
             return mimo_OSA(self, *args)
         if mode == "INSTANT":
@@ -1268,7 +1311,7 @@ class IndividualFIRMIMO(Individual):
         else:
             raise Exception("Choose a mode between: OSA, INSTANT, FreeRun, MShooting")
 
-    def __str__(self):
+    def __str__(self) -> str:
         string = ''
         i = 1
         for out in self:
@@ -1279,6 +1322,6 @@ class IndividualFIRMIMO(Individual):
             string += '\n'
         return string
 
-    def model2List(self):
+    def model2List(self) -> List[List[str]]:
         return [[str(tree) for tree in out] for out in self]
     

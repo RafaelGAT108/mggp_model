@@ -8,7 +8,7 @@ Created on Apr 25 2023
 from abc import ABC, abstractmethod
 
 from deap import gp, base
-
+from .base import Individual
 import random
 
 
@@ -34,16 +34,19 @@ class CrossLowOnePoint(Crossing):
     def __init__(self, element):
         super().__init__(element)
 
-    def cross(self, ind1, ind2):
+    def cross(self, ind1: Individual, ind2: Individual) -> tuple[Individual, Individual]:
         if self._element._mode in ['SISO', 'MISO'] or (self._element._mode == 'FIR' and self._element._nOutputs == 1):
             # idx = random.randint(0, len(ind1) - 1)
             idx = random.randint(0, min(len(ind1), len(ind2)) - 1)
             ind1[idx], ind2[idx] = self._gpConstraint(gp.cxOnePoint, ind1[idx], ind2[idx])
+
             return ind1, ind2
+        
         if self._element._mode == 'MIMO' or (self._element._mode == 'FIR' and self._element._nOutputs > 1):
             idx = random.randint(0, min(len(ind1), len(ind2)) - 1)
             idx2 = random.randint(0, min(len(ind1[0]), len(ind2[0])) - 1)
             ind1[idx][idx2], ind2[idx][idx2] = self._gpConstraint(gp.cxOnePoint, ind1[idx][idx2], ind2[idx][idx2])
+            
             return ind1, ind2
 
 
@@ -51,19 +54,22 @@ class CrossLowUniform(Crossing):
     def __init__(self, element):
         super().__init__(element)
 
-    def cross(self, ind1, ind2):
+    def cross(self, ind1: Individual, ind2: Individual) -> tuple[Individual, Individual]:
         if self._element._mode in ['SISO', 'MISO'] or (self._element._mode == 'FIR' and self._element._nOutputs == 1):
             indpb = 0.5
             for i in range(min(len(ind1), len(ind2))):
                 if random.random() < indpb:
                     ind1[i], ind2[i] = self._gpConstraint(gp.cxOnePoint, ind1[i], ind2[i])
+
             return ind1, ind2
+        
         if self._element._mode == 'MIMO' or (self._element._mode == 'FIR' and self._element._nOutputs > 1):
             indpb = 0.5
             for o in range(min(len(ind1), len(ind2))):
                 for i in range(min(len(ind1[o]), len(ind2[o]))):
                     if random.random() < indpb:
                         ind1[o][i], ind2[o][i] = self._gpConstraint(gp.cxOnePoint, ind1[o][i], ind2[o][i])
+
             return ind1, ind2
 
 
@@ -71,7 +77,7 @@ class CrossHighOnePoint(Crossing):
     def __init__(self, element):
         super().__init__(element)
 
-    def cross(self, ind1, ind2):
+    def cross(self, ind1: Individual, ind2: Individual) -> tuple[Individual, Individual]:
         if self._element._mode in ['SISO', 'MISO'] or (self._element._mode == 'FIR' and self._element._nOutputs == 1):
             # idx = random.randint(0, len(ind1) - 1)
             idx = random.randint(0, min(len(ind1), len(ind2)) - 1)
@@ -96,7 +102,7 @@ class CrossHighUniform(Crossing):
     def __init__(self, element):
         super().__init__(element)
 
-    def cross(self, ind1, ind2):
+    def cross(self, ind1: Individual, ind2: Individual) -> tuple[Individual, Individual]:
         if self._element._mode in ['SISO', 'MISO'] or (self._element._mode == 'FIR' and self._element._nOutputs == 1):
             indpb = 0.5
             # for i in range(len(ind1)):
@@ -105,7 +111,9 @@ class CrossHighUniform(Crossing):
                     aux = ind1[i]
                     ind1[i] = ind2[i]
                     ind2[i] = aux
+
             return ind1, ind2
+        
         if self._element._mode == 'MIMO' or (self._element._mode == 'FIR' and self._element._nOutputs > 1):
             for o in range(min(len(ind1), len(ind2))):
                 indpb = 0.5
@@ -114,4 +122,5 @@ class CrossHighUniform(Crossing):
                         aux = ind1[o][i]
                         ind1[o][i] = ind2[o][i]
                         ind2[o][i] = aux
+
             return ind1, ind2

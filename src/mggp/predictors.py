@@ -1,7 +1,8 @@
 from tqdm import tqdm
 import numpy as np
+from .base import Individual
 
-def miso_FIR_INSTANT(ind, y_true, u):
+def miso_FIR_INSTANT(ind: Individual, y_true: np.ndarray, u: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """
     FIR instantâneo (mesmo instante):
       y_pred[k] alinhado com y_true[k], iniciando em k = lagMax
@@ -10,7 +11,7 @@ def miso_FIR_INSTANT(ind, y_true, u):
     return np.dot(regressors, ind.theta), y_true[ind.lagMax:]
 
 
-def mimo_FIR_INSTANT(ind, y_true, u):
+def mimo_FIR_INSTANT(ind: Individual, y_true: np.ndarray, u: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """
     FIR instantâneo (MIMO):
       y_pred[k,:] alinhado com y_true[k,:], iniciando em k = lagMax
@@ -20,7 +21,7 @@ def mimo_FIR_INSTANT(ind, y_true, u):
     return np.array(y_pred).T, y_true[ind.lagMax:]
 
 
-def mimo_INSTANT(ind, y_true, u):
+def mimo_INSTANT(ind: Individual, y_true: np.ndarray, u: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     regressors = ind.makeRegressors(y_true, u, align="instant")
     yp = [np.dot(regressor, theta) for regressor, theta in zip(regressors, np.array(ind._theta))]
     y_pred = np.array(yp).T
@@ -28,7 +29,7 @@ def mimo_INSTANT(ind, y_true, u):
     return y_pred, y_true
 
 
-def mimo_CLASSIFY(ind, y_true, u):
+def mimo_CLASSIFY(ind: Individual, y_true: np.ndarray, u: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """
     Preditor "mesmo instante" para classificação (MIMO).
     Alinha y_pred[k] com y_true[k], iniciando em k = lagMax.
@@ -38,7 +39,7 @@ def mimo_CLASSIFY(ind, y_true, u):
     return np.array(yp).T, y_true[ind.lagMax:]
 
 
-def miso_CLASSIFY(ind, y_true, u):
+def miso_CLASSIFY(ind: Individual, y_true: np.ndarray, u: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """
     Preditor "mesmo instante" para classificação (MIMO).
     Alinha y_pred[k] com y_true[k], iniciando em k = lagMax.
@@ -49,7 +50,7 @@ def miso_CLASSIFY(ind, y_true, u):
     return np.array(y_pred).T, y_true[ind.lagMax:]
 
 
-def miso_OSA(ind, y_true, u):
+def miso_OSA(ind: Individual, y_true: np.ndarray, u: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """
     Implements the One-Step_Ahead predictor for MISO models
     Arguments:
@@ -62,7 +63,7 @@ def miso_OSA(ind, y_true, u):
     return y_pred, y_true[ind.lagMax + 1:]
 
 
-def mimo_OSA(ind, y_true, u):
+def mimo_OSA(ind: Individual, y_true: np.ndarray, u: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """
     Implements the One-Step_Ahead predictor for MIMO models
     Arguments:
@@ -76,7 +77,7 @@ def mimo_OSA(ind, y_true, u):
     return np.array(y_pred).T, y_true[ind.lagMax + 1:]
 
 
-def miso_FreeRun(ind, y_true, u):
+def miso_FreeRun(ind: Individual, y_true: np.ndarray, u: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 
     y_true = y_true.reshape(-1, 1)
 
@@ -119,7 +120,7 @@ def miso_FreeRun(ind, y_true, u):
     return np.nan_to_num(y_pred, nan=0), np.nan_to_num(y_true_trim, nan=0)
 
 
-def mimo_FreeRun(ind, y_true, u):
+def mimo_FreeRun(ind: Individual, y_true: np.ndarray, u: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """
     Free-Run predictor for MIMO models (consistente com u[k] e y[k-1])
     """
@@ -173,7 +174,7 @@ def mimo_FreeRun(ind, y_true, u):
     return np.nan_to_num(y_pred, nan=0), np.nan_to_num(y_true_trim, nan=0)
     
 
-def mimo_FIR_FreeRun(ind, y_true, u):
+def mimo_FIR_FreeRun(ind: Individual, y_true: np.ndarray, u: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """
     Implements the Free-Run predictor for MIMO models.
     Args:
@@ -219,7 +220,7 @@ def mimo_FIR_FreeRun(ind, y_true, u):
     return y_pred, y_true
 
 
-def miso_MShooting(ind, k, y, u):
+def miso_MShooting(ind: Individual, k: int, y_true: np.ndarray, u: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """
     Implements the Multiple-Shooting predictor for MISO models
     Arguments:
@@ -267,7 +268,7 @@ def miso_MShooting(ind, k, y, u):
     return np.nan_to_num(y_pred.reshape(-1, 1), nan=0), np.nan_to_num(y_true.reshape(-1, 1), nan=0)
 
 
-def mimo_MShooting(ind, k, y, u):
+def mimo_MShooting(ind: Individual, k: int, y_true: np.ndarray, u: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """
     Multiple-Shooting predictor for MIMO models
     """
@@ -325,7 +326,7 @@ def mimo_MShooting(ind, k, y, u):
     return np.nan_to_num(y_pred.reshape(-1, y.shape[1]), nan=0), np.nan_to_num(y_true.reshape(-1, y.shape[1]), nan=0)
 
 
-def mimo_FIR_MShooting(ind, k, y, u):
+def mimo_FIR_MShooting(ind: Individual, k: int, y_true: np.ndarray, u: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 
     if len(y.shape) == 1:
         y = y.reshape(-1, 1)

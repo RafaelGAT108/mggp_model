@@ -8,7 +8,7 @@ Created on Mon Apr 24 16:08:38 2023
 from abc import ABC, abstractmethod
 
 from deap import gp, base
-
+from .base import Individual
 import random
 
 
@@ -29,7 +29,7 @@ class Mutation(ABC):
         return offspring,
 
     
-    def generate_terminal_only(self, pset, type_=None):
+    def generate_terminal_only(self, pset: gp.PrimitiveSet, type_=None) -> gp.PrimitiveTree:
             """Retorna uma árvore com apenas um nó terminal escolhido aleatoriamente"""
             
             terminal_index = random.randint(1, self._element._nVar)
@@ -49,7 +49,7 @@ class Mutation(ABC):
             return gp.PrimitiveTree([terminal_node])
         
     
-    def genGrowLimitedNodes(self, pset, min_depth, max_depth, max_nodes, type_=None):
+    def genGrowLimitedNodes(self, pset: gp.PrimitiveSet, min_depth: int, max_depth: int, max_nodes: int, type_=None) -> list:
 
         while True:
             expr = gp.genHalfAndHalf(pset, min_depth, max_depth, type_=type_)
@@ -67,7 +67,7 @@ class MutGPOneTree(Mutation):
         self._toolbox.register("expr_mut", self.genGrowLimitedNodes, min_depth=0, max_depth=self._element._maxHeight-1, max_nodes=20)
         self._toolbox.register("mutateGP", gp.mutUniform, expr=self._toolbox.expr_mut, pset=self._element.pset)
 
-    def mutate(self, ind):
+    def mutate(self, ind: Individual) -> Individual:
         if self._element._mode in ['SISO', 'MISO']:
             idx = random.randint(0, len(ind) - 1)
             ind[idx] = self._gpConstraint(self._toolbox.mutateGP, ind[idx])[0]
@@ -87,7 +87,7 @@ class MutGPUniform(Mutation):
         # self._toolbox.register("expr_mut", self.genGrowLimitedNodes, min_depth=0, max_depth=self._element._maxHeight-1, max_nodes=20)
         self._toolbox.register("mutateGP", gp.mutUniform, expr=self._toolbox.expr_mut, pset=self._element.pset)
 
-    def mutate(self, ind):
+    def mutate(self, ind: Individual) -> Individual:
         if self._element._mode in ['SISO', 'MISO']:
             indpb = 0.50
             for i in range(len(ind)):
@@ -107,7 +107,7 @@ class MutGPReplace(Mutation):
     def __init__(self, element):
         super().__init__(element)
 
-    def mutate(self, ind):
+    def mutate(self, ind: Individual) -> Individual:
         if self._element._mode in ['SISO', 'MISO']:
             try:
                 idx = random.randint(0, len(ind) - 1)

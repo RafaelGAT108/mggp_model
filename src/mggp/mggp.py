@@ -100,9 +100,10 @@ class MGGP:
 
         if self.nInputs > 1 and self.nOutputs == 1:
             self.mode = "MISO"
+
         elif self.nInputs > 1 and self.nOutputs > 1:
             self.mode = "MIMO" if mode == 'NARX' else mode
-            # self.mode = "FIR"
+
         elif self.nInputs >= 1 and self.nOutputs > 1:
             self.mode = "FIR"
 
@@ -153,16 +154,6 @@ class MGGP:
     def addCrossOver(self, crossover):
         self._crossList.append(crossover(self.element))
 
-    # def _delAttr(self, ind):
-    #     try:
-    #         del ind.fitness.values
-    #         del ind.funcs
-    #         del ind.kfuncs
-    #         del ind.lagMax
-    #     except AttributeError:
-    #         pass
-
-
     def _fir_align(self, eval_type: str) -> str:
         """
         - OSA: usa u[k-1] -> y[k] (seu alinhamento antigo)
@@ -173,7 +164,7 @@ class MGGP:
         return "OSA"
 
 
-    def _call_with_align_if_supported(self, fn, *args, align: str):
+    def _call_with_align_if_supported(self, fn: callable, *args: tuple, align: str):
         """
         Chama fn(*args, align=align) se o parâmetro existir.
         Caso contrário, chama fn(*args).
@@ -195,7 +186,7 @@ class MGGP:
         """
         return 0 if (self.mode == "FIR" and eval_type == "INSTANT") else 1
 
-    def _delAttr(self, ind):
+    def _delAttr(self, ind: Individual) -> None:
         """Remove atributos do indivíduo de forma segura"""
         
         attrs_to_remove = ['fitness.values', '_funcs', '_lagMax', 'funcs', 'kfuncs', 'lagMax']
@@ -221,17 +212,19 @@ class MGGP:
                 continue
 
 
-    def stream(self):
+    def stream(self) -> None:
         print(self._logbook.stream)
 
-    def initPop(self, seed=[]):
+    def initPop(self, seed: List = []) -> None:
         if len(seed) > self.populationSize: raise Exception('Seed exceeds population size!')
+
         if seed == []:
             self._pop = self.element._toolbox.population(self.populationSize)
+
         else:
             self._pop = self.element._toolbox.population(self.populationSize - len(seed))
-            # self._pop += seed
             self._pop.extend([seed])
+
         invalid_ind = [ind for ind in self._pop if not ind.fitness.valid]
 
         if self.evaluationType == 'OSA':
@@ -253,11 +246,11 @@ class MGGP:
         self._hof.update(self._pop)
 
 
-    def get_fitness_value(self, individual):
+    def get_fitness_value(self, individual: Individual):
         return individual.fitness.values[0]
 
 
-    def _createStatistics(self):
+    def _createStatistics(self) -> tools.Statistics:
         stats = tools.Statistics(self.get_fitness_value)
         stats.register("avg", np.mean)
         stats.register("max", np.max)
@@ -265,7 +258,7 @@ class MGGP:
         return stats
 
 
-    def step(self, gen_number):
+    def step(self, gen_number: int) -> None:
         if not self._pop:
             raise Exception('Population must be initialized!')
 
@@ -307,26 +300,22 @@ class MGGP:
         self._pop = self._hof.items + offspring
         self._hof.update(self._pop)
 
-        # self.save_model(self._hof[0])
-
         model = deepcopy(self._hof[0])
         self.element.compileModel(model)
 
         if self.mode == "FIR":
             align = self._fir_align(self.evaluationType)
-            theta_value = self._call_with_align_if_supported(
-                model.leastSquares, self.outputs, self.inputs, align=align
-            )
+            theta_value = self._call_with_align_if_supported(model.leastSquares, self.outputs, self.inputs, align=align)
         else:
             if 'sign' in self.operators: 
                 theta_value = model.hysteretic_constrained_ls(self.outputs, self.inputs)
+            
             else:
                 theta_value = model.leastSquares(self.outputs, self.inputs)
 
         model._theta = list(theta_value)
         
         self.save_model(model)
-        #---Record--Statistics-----------------------------------------------------
         record = {'fitness': self._stats.compile(self._pop)}
 
         self._logbook.record(gen=gen_number+1, evals=len(invalid_ind), **record)
@@ -357,7 +346,6 @@ class MGGP:
 
             if self.problem_type == 'regression':
                 
-
                 if self.froe_mode:
                     
                     self._constrain_phi_functions(ind)
@@ -422,17 +410,15 @@ class MGGP:
             else:
                 raise ValueError("problem_type must be 'regression' or 'classification'")
 
-        except (np.linalg.LinAlgError, ValueError) as e:
+        except (np.linalg.LinAlgError, ValueError, IndexError) as e:
             return (np.inf,)
 
 
-    def run(self, seed=[]) -> None:
+    def run(self, seed: List = []) -> None:
 
         print(f"System Mode: {self.mode}. N° Inputs: {self.nInputs}. N° Outputs: {self.nOutputs}")
         print(f"Input Samples: {len(self.inputs)}. Output Samples: {len(self.outputs)}\n")
         
-        # pool = multiprocessing.Pool(multiprocessing.cpu_count())
-        # self._toolbox.register("map", pool.map)
         self._toolbox.register("map", map)    
 
         init = time.time()
@@ -486,9 +472,8 @@ class MGGP:
 
         if self.mode == "FIR":
             align = self._fir_align(self.evaluationType)
-            theta_value = self._call_with_align_if_supported(
-                model.leastSquares, self.outputs, self.inputs, align=align
-            )
+            theta_value = self._call_with_align_if_supported(model.leastSquares, self.outputs, self.inputs, align=align)
+        
         else:
             if self.problem_type == "classification":
                 model._logistic_model = True
@@ -560,7 +545,7 @@ class MGGP:
             raise Exception("Choose a valuation dataset type between list or tuple.")
 
 
-    def simplify_model(self, model):
+    def simplify_model(self, model) -> str:
         equation = model.to_equation()
 
         lines = equation.split('\n')
@@ -582,7 +567,7 @@ class MGGP:
         return '\n'.join(output_lines)
 
 
-    def simplify_terms(self, terms):
+    def simplify_terms(self, terms) -> str:
       
         term_dict = {}
         for term in terms:
@@ -639,7 +624,7 @@ class MGGP:
         return model
     
 
-    def save_model(self, model):
+    def save_model(self, model) -> None:
         """
         Save the best model to a file for later use as seed
         Args:
@@ -664,7 +649,7 @@ class MGGP:
             pickle.dump(model_data, f)
 
 
-    def _check_hysteretic_constraints(self, ind, tol=1e-10):
+    def _check_hysteretic_constraints(self, ind: Individual, tol: float=1e-10) -> bool:
         """
         Verifica se o modelo atende às restrições de continuum de equilíbrio
         """
@@ -703,7 +688,7 @@ class MGGP:
         return None
     
 
-    def _constrain_phi_functions(self, ind):
+    def _constrain_phi_functions(self, ind: Individual):
         """
         Garante que as funções φ (subtraction e sign) recebam apenas 
         variáveis de entrada defasadas.
@@ -781,25 +766,22 @@ class MGGP:
                     ind[o][i] = constrain_phi_tree(tree, self.element._pset)
 
 
-    def _is_lagged_input(self, node):
+    def _is_lagged_input(self, node) -> bool:
         """Verifica se o nó é uma variável de entrada defasada"""
         if isinstance(node, gp.Terminal) and node.value.startswith('u'):
             return True
         return False
 
 
-    def _apply_froe_pruning(self, ind):
+    def _apply_froe_pruning(self, ind: Individual):
         """
         Aplica o algoritmo FROE para remover termos com ERR baixo
         """
 
         if self.mode == "FIR":
+
             align = self._fir_align(self.evaluationType)
-
-            P = self._call_with_align_if_supported(
-                ind.makeRegressors, self.outputs, self.inputs, align=align
-            )
-
+            P = self._call_with_align_if_supported(ind.makeRegressors, self.outputs, self.inputs, align=align)
             yd = self.outputs[ind.lagMax + self._yd_offset(self.evaluationType):]
 
         else:
@@ -812,7 +794,7 @@ class MGGP:
             self._froe_pruning_mimo(ind, P, yd)
 
 
-    def _froe_pruning_miso(self, ind, P, yd):
+    def _froe_pruning_miso(self, ind: Individual, P: np.ndarray, yd: np.ndarray) -> None:
         """FROE para modelos MISO"""
         n_terms = P.shape[1] - 1 
         
@@ -841,7 +823,7 @@ class MGGP:
         ind[:] = new_ind
 
 
-    def _froe_pruning_mimo(self, ind, P, yd):
+    def _froe_pruning_mimo(self, ind: Individual, P: np.ndarray, yd: np.ndarray) -> None:
         """FROE para modelos MIMO (aplica para cada saída)"""
         for o in range(len(ind)):
             P_o = P[o]  
