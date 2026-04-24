@@ -240,10 +240,21 @@ class MGGP:
         for ind, fit in zip(invalid_ind, fitnesses):
             ind.fitness.values = fit
 
+        for ind in self._pop:
+            if not ind.fitness.valid:
+                ind.fitness.values = (np.inf,)
+
         record = {'fitness': self._stats.compile(self._pop)}
         self._logbook.record(gen=1, evals=len(invalid_ind), **record)
         # print(self._logbook)
-        self._hof.update(self._pop)
+        # self._hof.update(self._pop)
+        valid_ind = [ind for ind in self._pop if ind.fitness.valid]
+
+        if len(valid_ind) > 0:
+            self._hof.update(valid_ind)
+        else:
+            raise RuntimeError("No valid individuals in initial population")
+
 
 
     def get_fitness_value(self, individual: Individual):
@@ -371,7 +382,7 @@ class MGGP:
                         theta_value = ind.leastSquares(self.outputs, self.inputs)
 
                     ind._theta = theta_value
-                
+
                 args = (self.outputs, self.inputs) if self.evaluationType != "MShooting" else (self.k, self.outputs, self.inputs)
                 yp, yd = ind.predict(self.evaluationType, *args)
                 error = ind.score(yd, yp, self.evaluationMode)

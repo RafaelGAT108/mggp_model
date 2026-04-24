@@ -8,7 +8,7 @@ Created on Apr 25 2023
 from abc import ABC, abstractmethod
 
 from deap import gp, base
-from .base import Individual
+from mggp.base import Individual
 import random
 
 

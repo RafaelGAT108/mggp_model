@@ -15,7 +15,6 @@ from deap import gp, creator, base, tools
 import operator
 import numpy as np
 import re
-from .base import Individual
 from sklearn.metrics import mean_squared_error, accuracy_score, log_loss
 from numba import njit
 from .predictors import miso_OSA, miso_FreeRun, miso_MShooting, mimo_CLASSIFY, miso_FIR_INSTANT, mimo_FIR_INSTANT, miso_CLASSIFY
@@ -37,299 +36,6 @@ def sin(X1):
 
 def div(X1, X2):
     return X1 / X2
-
-class Element(object):
-    def __init__(self,
-                 weights: tuple = (-1,),
-                 nDelays: int | List[int] = 3,
-                 nInputs: int = 1,
-                 nOutputs: int = 1,
-                 nTerms: int = 10,
-                 maxHeight: int = 5,
-                 mode: str = "MISO",
-                 single_delay_only: bool = False,
-                 operators: List[str] = ['mul', 'subtraction', 'sign', 'add', 'tanh', 'div', 'sin']):
-        
-        self._pset: gp.PrimitiveSet = None
-        self._toolbox: base.Toolbox = None
-        self._mode = mode.upper()
-        self._single_delay_only = single_delay_only
-
-        if nInputs == 1 and nOutputs == 1:
-            self._mode = "SISO"
-        
-        if self._mode == "FIR":
-            self._nVar = nInputs
-
-        elif self._mode == "SISO":
-            self._nVar = 2 
-
-        else:
-            self._nVar = nInputs + nOutputs
-        
-        if type(nDelays) is int:
-            self._delays = np.arange(1, nDelays + 1)
-        elif type(nDelays) is list:
-            self._delays = nDelays
-
-        self.operators = operators
-        self.primitives_sets = {
-            "mul": (operator.mul, 2),
-            "sign": (sign, 2),
-            "subtraction": (operator.sub, 2),
-            "add": (operator.add, 2),
-            "tanh": (tanh, 2),
-            "div": (div, 2),
-            "sin": (sin, 1)
-        }
-
-        self.iniciatePrimitivesSets()
-
-        self._weights = weights
-        self._nTerms = nTerms
-        self._nOutputs = nOutputs
-        self._maxHeight = maxHeight     
-
-        creator.create("Program", gp.PrimitiveTree, fitness=None, pset=self.pset)
-        creator.create("FitnessMin", base.Fitness, weights=self._weights)
-
-        if self._mode == "MISO":
-            creator.create("Individual", IndividualMISO, fitness=creator.FitnessMin)
-
-        elif self._mode == "MIMO":
-            creator.create("Individual", IndividualMIMO, fitness=creator.FitnessMin)
-
-        elif self._mode == "SISO":
-            creator.create("Individual", IndividualSISO, fitness=creator.FitnessMin)
-
-        elif self._mode == "FIR":
-            if nOutputs == 1:
-                creator.create("Individual", IndividualFIR, fitness=creator.FitnessMin)
-
-            else:
-                creator.create("Individual", IndividualFIRMIMO, fitness=creator.FitnessMin)
-        else:
-            raise Exception("Choose a mode between:\n" + "MISO, MIMO, FIR or SISO")
-        self.iniciateToolbox()
-
-
-    def iniciatePrimitivesSets(self) -> None:
-        
-        self._pset = gp.PrimitiveSet("main", self._nVar)
-        
-        for operator in self.operators:
-
-            if operator in self.primitives_sets.keys():
-                func, arity = self.primitives_sets[operator]
-                self._pset.addPrimitive(func, arity, name=operator)
-            
-            else:
-                raise ValueError(f"Operator '{operator}' is not defined in primitives_sets.")
-        
-        if not self._single_delay_only:
-            delays = [partial(_roll, i=i) for i in self._delays]
-
-            for i, roll in zip(self._delays, delays):
-                self._pset.addPrimitive(roll, 1, name=f'q{i}')
-        
-        else:
-            self._pset.addPrimitive(partial(_roll, i=1), 1, name=f'q1')
-
-
-    def iniciateToolbox(self) -> None:
-
-        def generate_terminal_only() -> gp.PrimitiveTree:
-            """Retorna uma árvore com apenas um nó terminal escolhido aleatoriamente"""
-            
-            terminal_index = random.randint(1, self._nVar)
-
-            if self._mode == "FIR":
-                terminal_name = f"u{terminal_index}"
-            
-            else:
-                
-                if terminal_index <= (self._nVar - self._nOutputs):
-                    terminal_name = f"u{terminal_index}"
-
-                else:
-                    terminal_name = f"y{terminal_index}"
-
-            terminal_node = self._pset.mapping[terminal_name]
-            return gp.PrimitiveTree([terminal_node])
-        
-        self._toolbox = base.Toolbox()
-        # self._toolbox.register("_expr", generate_terminal_only)
-        self._toolbox.register("_expr", self.genGrowLimitedNodes, pset=self._pset, min_depth=0, max_depth=self._maxHeight, max_nodes=20)
-        # self._toolbox.register("_expr", gp.genHalfAndHalf, pset=self._pset, min_=0, max_=self._maxHeight)
-        self._toolbox.register("_program", tools.initIterate, creator.Program, self._toolbox._expr)
-
-        if self._mode == "SISO":
-            
-            creator.create("Individual", IndividualSISO, fitness=creator.FitnessMin)
-            self._toolbox.register("individual", tools.initRepeat, creator.Individual, self._toolbox._program, self._nTerms)
-        
-        elif self._mode == "MISO" or (self._mode == "FIR" and self._nOutputs == 1):
-        # Para MISO ou FIR SISO (1 saída)
-            self._toolbox.register("individual", tools.initRepeat, creator.Individual, self._toolbox._program, self._nTerms)
-        
-        elif self._mode == "MIMO" or (self._mode == "FIR" and self._nOutputs > 1):
-            self._toolbox.register("_outputs", tools.initRepeat, list, self._toolbox._program, self._nTerms)
-            self._toolbox.register("individual", tools.initRepeat, creator.Individual, self._toolbox._outputs, self._nOutputs)
-        
-        self._toolbox.register("population", tools.initRepeat, list, self._toolbox.individual)
-
-
-    def genGrowLimitedNodes(self, pset: gp.PrimitiveSet, min_depth: int, max_depth: int, max_nodes: int) -> List:
-        """Versão do genGrow com limite de nós"""
-        while True:
-            expr = gp.genHalfAndHalf(pset, min_depth, max_depth)
-            tree = gp.PrimitiveTree(expr)
-            if len(tree) <= max_nodes:
-                return expr
-
-
-    @property
-    def pset(self) -> gp.PrimitiveSet:
-        return self._pset
-    
-
-    @property
-    def toolbox(self) -> base.Toolbox:
-        return self._toolbox
-
-
-    def renameArguments(self, dictionary: dict = {'ARG0': 'y', 'ARG1': 'u'}) -> None:
-        self._pset.renameArguments(**dictionary)
-
-
-    def addPrimitive(self, *args: tuple) -> None:
-        self._pset.addPrimitive(*args)
-
-
-    def buildModelFromList(self, listString: List[str]) -> Individual:
-        model = creator.Individual()
-
-        if self._mode == "SISO":
-            for string in listString:
-                model.append(gp.PrimitiveTree.from_string(string, self.pset))
-    
-        if self._mode == "MISO" or self._mode == "FIR" and self._nOutputs == 1:
-            for string in listString:
-                model.append(gp.PrimitiveTree.from_string(string, self.pset))
-        
-        if self._mode == "MIMO" or (self._mode == "FIR" and self._nOutputs > 1):
-            for out in listString:
-                aux = [gp.PrimitiveTree.from_string(string, self.pset) for string in out]
-                model.append(aux)
-        return model
-
-
-    def buildRandomModel(self) -> Individual:
-        return self._toolbox.individual()
-
-
-    def compileModel(self, model) -> None:
-        if self._mode == 'SISO':
-            model._funcs = [gp.compile(tree, self.pset) for tree in model]
-
-        elif self._mode == 'MISO' or self._mode == "FIR" and self._nOutputs == 1:
-            model._funcs = [gp.compile(tree, self.pset) for tree in model]
-
-        elif self._mode == 'MIMO' or (self._mode == "FIR" and self._nOutputs > 1):
-            model._funcs = [[gp.compile(tree, self.pset) for tree in out] for out in model]
-            # model._funcs = [[self._compile_to_function(tree, self.pset) for tree in out] for out in model]
-
-        self._setModelLagMax(model)
-
-
-    def _compile_to_function(self, expr, pset: gp.PrimitiveSet) -> dict:
-        code = str(expr)
-
-        if len(pset.arguments) > 0:
-            args = ",".join(arg for arg in pset.arguments)
-            code = f"def generated_function({args}):\n    return {code}"
-
-        local_scope = {}
-        try:
-            exec(code, pset.context, local_scope)
-            return local_scope["generated_function"]
-        
-        except MemoryError:
-            _, _, traceback = sys.exc_info()
-            raise MemoryError("DEAP: Error in tree evaluation: Python cannot evaluate a tree higher than 90. "
-                "To avoid this problem, you should use bloat control on your operators. "
-                "See the DEAP documentation for more information. DEAP will now abort."
-            ).with_traceback(traceback)
-
-
-    def _setModelLagMax(self, model):
-        def checkbranch(branch):
-            if branch == []: return
-            if branch[-1][2] == branch[-1][1]:
-                del branch[-1]
-                if branch == []: return
-                branch[-1][2] += 1
-                return checkbranch(branch)
-            else:
-                return
-
-        def checkOut(output):
-            treelags = []
-            for tree in output:
-                i = 0
-                lagMax = 0
-                branches = []
-                count = 0
-                while i < len(tree):
-                    if re.search("q\d", tree[i].name):
-                        count += int(tree[i].name[1:])
-                    elif type(tree[i]) == gp.Primitive:
-                        branches.append([count, tree[i].arity, 0])
-                        count = 0
-                    elif type(tree[i]) == gp.Terminal:
-                        if branches == []:
-                            lag = count
-                            model._terminals += str(tree[i].value) + '[i-%d] * ' % (count + 1)
-                        else:
-                            branches[-1][2] += 1
-                            lag = count + sum([item[0] for item in branches])
-                            model._terminals += tree[i].value + '[i-%d] * ' % (lag + 1)
-                        if lag > lagMax:
-                            lagMax = lag
-                        count = 0
-                        checkbranch(branches)
-                    i += 1
-                treelags.append(lagMax)
-                model._terminals += '\n'
-            model._terminals += '\n'
-            return max(treelags)
-
-        if self._mode == "SISO":
-            model.lagMax = checkOut(model)
-        
-        elif self._mode == "MISO" or (self._mode == "FIR" and self._nOutputs == 1):
-            model.lagMax = checkOut(model)
-        
-        elif self._mode == "MIMO" or (self._mode == "FIR" and self._nOutputs > 1):
-            aux = []
-            for i, out in enumerate(model):
-                model._terminals += 'Output %d:\n\n' % (i + 1)
-                aux.append(checkOut(out))
-            model.lagMax = max(aux)
-
-
-    def save(self, filename: str, dictionary: dict) -> None:
-        
-        with open(filename, 'wb') as f:
-            pickle.dump(dictionary, f)
-            f.close()
-
-    def load(self, filename: str) -> dict:
-        
-        with open(filename, 'rb') as f:
-            o = pickle.load(f)
-            f.close()
-            return o
 
 
 class Individual(list):
@@ -773,6 +479,301 @@ class Individual(list):
             string += '\n'
 
         return string
+
+
+class Element(object):
+    def __init__(self,
+                 weights: tuple = (-1,),
+                 nDelays: int | List[int] = 3,
+                 nInputs: int = 1,
+                 nOutputs: int = 1,
+                 nTerms: int = 10,
+                 maxHeight: int = 5,
+                 mode: str = "MISO",
+                 single_delay_only: bool = False,
+                 operators: List[str] = ['mul', 'subtraction', 'sign', 'add', 'tanh', 'div', 'sin']):
+        
+        self._pset: gp.PrimitiveSet = None
+        self._toolbox: base.Toolbox = None
+        self._mode = mode.upper()
+        self._single_delay_only = single_delay_only
+
+        if nInputs == 1 and nOutputs == 1:
+            self._mode = "SISO"
+        
+        if self._mode == "FIR":
+            self._nVar = nInputs
+
+        elif self._mode == "SISO":
+            self._nVar = 2 
+
+        else:
+            self._nVar = nInputs + nOutputs
+        
+        if type(nDelays) is int:
+            self._delays = np.arange(1, nDelays + 1)
+        elif type(nDelays) is list:
+            self._delays = nDelays
+
+        self.operators = operators
+        self.primitives_sets = {
+            "mul": (operator.mul, 2),
+            "sign": (sign, 2),
+            "subtraction": (operator.sub, 2),
+            "add": (operator.add, 2),
+            "tanh": (tanh, 2),
+            "div": (div, 2),
+            "sin": (sin, 1)
+        }
+
+        self.iniciatePrimitivesSets()
+
+        self._weights = weights
+        self._nTerms = nTerms
+        self._nOutputs = nOutputs
+        self._maxHeight = maxHeight     
+
+        creator.create("Program", gp.PrimitiveTree, fitness=None, pset=self.pset)
+        creator.create("FitnessMin", base.Fitness, weights=self._weights)
+
+        if self._mode == "MISO":
+            creator.create("Individual", IndividualMISO, fitness=creator.FitnessMin)
+
+        elif self._mode == "MIMO":
+            creator.create("Individual", IndividualMIMO, fitness=creator.FitnessMin)
+
+        elif self._mode == "SISO":
+            creator.create("Individual", IndividualSISO, fitness=creator.FitnessMin)
+
+        elif self._mode == "FIR":
+            if nOutputs == 1:
+                creator.create("Individual", IndividualFIR, fitness=creator.FitnessMin)
+
+            else:
+                creator.create("Individual", IndividualFIRMIMO, fitness=creator.FitnessMin)
+        else:
+            raise Exception("Choose a mode between:\n" + "MISO, MIMO, FIR or SISO")
+        self.iniciateToolbox()
+
+
+    def iniciatePrimitivesSets(self) -> None:
+        
+        self._pset = gp.PrimitiveSet("main", self._nVar)
+        
+        for operator in self.operators:
+
+            if operator in self.primitives_sets.keys():
+                func, arity = self.primitives_sets[operator]
+                self._pset.addPrimitive(func, arity, name=operator)
+            
+            else:
+                raise ValueError(f"Operator '{operator}' is not defined in primitives_sets.")
+        
+        if not self._single_delay_only:
+            delays = [partial(_roll, i=i) for i in self._delays]
+
+            for i, roll in zip(self._delays, delays):
+                self._pset.addPrimitive(roll, 1, name=f'q{i}')
+        
+        else:
+            self._pset.addPrimitive(partial(_roll, i=1), 1, name=f'q1')
+
+
+    def iniciateToolbox(self) -> None:
+
+        def generate_terminal_only() -> gp.PrimitiveTree:
+            """Retorna uma árvore com apenas um nó terminal escolhido aleatoriamente"""
+            
+            terminal_index = random.randint(1, self._nVar)
+
+            if self._mode == "FIR":
+                terminal_name = f"u{terminal_index}"
+            
+            else:
+                
+                if terminal_index <= (self._nVar - self._nOutputs):
+                    terminal_name = f"u{terminal_index}"
+
+                else:
+                    terminal_name = f"y{terminal_index}"
+
+            terminal_node = self._pset.mapping[terminal_name]
+            return gp.PrimitiveTree([terminal_node])
+        
+        self._toolbox = base.Toolbox()
+        # self._toolbox.register("_expr", generate_terminal_only)
+        self._toolbox.register("_expr", self.genGrowLimitedNodes, pset=self._pset, min_depth=0, max_depth=self._maxHeight, max_nodes=20)
+        # self._toolbox.register("_expr", gp.genHalfAndHalf, pset=self._pset, min_=0, max_=self._maxHeight)
+        self._toolbox.register("_program", tools.initIterate, creator.Program, self._toolbox._expr)
+
+        if self._mode == "SISO":
+            
+            creator.create("Individual", IndividualSISO, fitness=creator.FitnessMin)
+            self._toolbox.register("individual", tools.initRepeat, creator.Individual, self._toolbox._program, self._nTerms)
+        
+        elif self._mode == "MISO" or (self._mode == "FIR" and self._nOutputs == 1):
+        # Para MISO ou FIR SISO (1 saída)
+            self._toolbox.register("individual", tools.initRepeat, creator.Individual, self._toolbox._program, self._nTerms)
+        
+        elif self._mode == "MIMO" or (self._mode == "FIR" and self._nOutputs > 1):
+            self._toolbox.register("_outputs", tools.initRepeat, list, self._toolbox._program, self._nTerms)
+            self._toolbox.register("individual", tools.initRepeat, creator.Individual, self._toolbox._outputs, self._nOutputs)
+        
+        self._toolbox.register("population", tools.initRepeat, list, self._toolbox.individual)
+
+
+    def genGrowLimitedNodes(self, pset: gp.PrimitiveSet, min_depth: int, max_depth: int, max_nodes: int) -> List:
+        """Versão do genGrow com limite de nós"""
+        while True:
+            expr = gp.genHalfAndHalf(pset, min_depth, max_depth)
+            tree = gp.PrimitiveTree(expr)
+            if len(tree) <= max_nodes:
+                return expr
+
+
+    @property
+    def pset(self) -> gp.PrimitiveSet:
+        return self._pset
+    
+
+    @property
+    def toolbox(self) -> base.Toolbox:
+        return self._toolbox
+
+
+    def renameArguments(self, dictionary: dict = {'ARG0': 'y', 'ARG1': 'u'}) -> None:
+        self._pset.renameArguments(**dictionary)
+
+
+    def addPrimitive(self, *args: tuple) -> None:
+        self._pset.addPrimitive(*args)
+
+
+    def buildModelFromList(self, listString: List[str]) -> Individual:
+        model = creator.Individual()
+
+        if self._mode == "SISO":
+            for string in listString:
+                model.append(gp.PrimitiveTree.from_string(string, self.pset))
+    
+        if self._mode == "MISO" or self._mode == "FIR" and self._nOutputs == 1:
+            for string in listString:
+                model.append(gp.PrimitiveTree.from_string(string, self.pset))
+        
+        if self._mode == "MIMO" or (self._mode == "FIR" and self._nOutputs > 1):
+            for out in listString:
+                aux = [gp.PrimitiveTree.from_string(string, self.pset) for string in out]
+                model.append(aux)
+        return model
+
+
+    def buildRandomModel(self) -> Individual:
+        return self._toolbox.individual()
+
+
+    def compileModel(self, model) -> None:
+        if self._mode == 'SISO':
+            model._funcs = [gp.compile(tree, self.pset) for tree in model]
+
+        elif self._mode == 'MISO' or self._mode == "FIR" and self._nOutputs == 1:
+            model._funcs = [gp.compile(tree, self.pset) for tree in model]
+
+        elif self._mode == 'MIMO' or (self._mode == "FIR" and self._nOutputs > 1):
+            model._funcs = [[gp.compile(tree, self.pset) for tree in out] for out in model]
+            # model._funcs = [[self._compile_to_function(tree, self.pset) for tree in out] for out in model]
+
+        self._setModelLagMax(model)
+
+
+    def _compile_to_function(self, expr, pset: gp.PrimitiveSet) -> dict:
+        code = str(expr)
+
+        if len(pset.arguments) > 0:
+            args = ",".join(arg for arg in pset.arguments)
+            code = f"def generated_function({args}):\n    return {code}"
+
+        local_scope = {}
+        try:
+            exec(code, pset.context, local_scope)
+            return local_scope["generated_function"]
+        
+        except MemoryError:
+            _, _, traceback = sys.exc_info()
+            raise MemoryError("DEAP: Error in tree evaluation: Python cannot evaluate a tree higher than 90. "
+                "To avoid this problem, you should use bloat control on your operators. "
+                "See the DEAP documentation for more information. DEAP will now abort."
+            ).with_traceback(traceback)
+
+
+    def _setModelLagMax(self, model):
+        def checkbranch(branch):
+            if branch == []: return
+            if branch[-1][2] == branch[-1][1]:
+                del branch[-1]
+                if branch == []: return
+                branch[-1][2] += 1
+                return checkbranch(branch)
+            else:
+                return
+
+        def checkOut(output):
+            treelags = []
+            for tree in output:
+                i = 0
+                lagMax = 0
+                branches = []
+                count = 0
+                while i < len(tree):
+                    if re.search("q\d", tree[i].name):
+                        count += int(tree[i].name[1:])
+                    elif type(tree[i]) == gp.Primitive:
+                        branches.append([count, tree[i].arity, 0])
+                        count = 0
+                    elif type(tree[i]) == gp.Terminal:
+                        if branches == []:
+                            lag = count
+                            model._terminals += str(tree[i].value) + '[i-%d] * ' % (count + 1)
+                        else:
+                            branches[-1][2] += 1
+                            lag = count + sum([item[0] for item in branches])
+                            model._terminals += tree[i].value + '[i-%d] * ' % (lag + 1)
+                        if lag > lagMax:
+                            lagMax = lag
+                        count = 0
+                        checkbranch(branches)
+                    i += 1
+                treelags.append(lagMax)
+                model._terminals += '\n'
+            model._terminals += '\n'
+            return max(treelags)
+
+        if self._mode == "SISO":
+            model.lagMax = checkOut(model)
+        
+        elif self._mode == "MISO" or (self._mode == "FIR" and self._nOutputs == 1):
+            model.lagMax = checkOut(model)
+        
+        elif self._mode == "MIMO" or (self._mode == "FIR" and self._nOutputs > 1):
+            aux = []
+            for i, out in enumerate(model):
+                model._terminals += 'Output %d:\n\n' % (i + 1)
+                aux.append(checkOut(out))
+            model.lagMax = max(aux)
+
+
+    def save(self, filename: str, dictionary: dict) -> None:
+        
+        with open(filename, 'wb') as f:
+            pickle.dump(dictionary, f)
+            f.close()
+
+    def load(self, filename: str) -> dict:
+        
+        with open(filename, 'rb') as f:
+            o = pickle.load(f)
+            f.close()
+            return o
+
 
 
 @njit
