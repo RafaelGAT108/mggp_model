@@ -9,7 +9,7 @@ def test_build_and_compile_model(siso_data):
     model = el.buildRandomModel()
     el.compileModel(model)
 
-    assert hasattr(model, "_funcs")
+    assert hasattr(model, "funcs")
     assert model.lagMax >= 0
 
 

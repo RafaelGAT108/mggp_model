@@ -7,8 +7,8 @@ from scipy import signal
 import matplotlib.pyplot as plt
 from scipy.signal import butter,filtfilt
 import pickle
-from tensorflow.keras import backend as K
-import keras
+# from tensorflow.keras import backend as K
+# import keras
 from sklearn.metrics import mean_absolute_percentage_error, mean_absolute_error, r2_score
 
 def sign(X1, X2):
@@ -21,7 +21,7 @@ def mcase_21(u, y_init):
 
     u = np.asarray(u)
     N = len(u)
-
+    u = np.asarray([x[0] for x in u])
     y_pred = np.zeros(N)
     terms = np.zeros((11, N))
 
@@ -47,6 +47,52 @@ def mcase_21(u, y_init):
         )
 
     return y_pred[3:]
+
+import numpy as np
+
+def mcase24_free_run_terms(u, y_init):
+    u = np.asarray(u).reshape(-1)
+    y_init = np.asarray(y_init).reshape(-1)
+
+    N = len(u)
+
+    y_pred = np.zeros(N)
+
+    # número de termos da equação
+    n_terms = 15
+    terms = np.zeros((n_terms, N))
+
+    # inicialização
+    y_pred[:1] = y_init[:1]
+
+    for k in range(1, N):
+
+        du = u[k] - u[k-1]
+        s  = np.sign(du)
+        s_inv = np.sign(u[k-1] - u[k])  # equivalente a -s (mas mantendo explícito)
+
+        # --- termos ---
+        terms[0, k]  =  1.79890e+01 * u[k]
+        terms[1, k]  =  3.75504e-01 * s * u[k-1] * u[k]
+        terms[2, k]  = -1.11655e+00 * s_inv * u[k-1] * s
+        terms[3, k]  = -1.79890e+01 * u[k-1]
+        terms[4, k]  = -1.17417e-01 * s * y_pred[k-1] * s
+        terms[5, k]  =  1.00000e+00 * y_pred[k-1]
+        terms[6, k]  = -1.13020e+00 * s * s
+        terms[7, k]  = -5.19738e-02 * y_pred[k-1] * s
+        terms[8, k]  =  2.56990e-02 * u[k-1] * u[k] * u[k] * du
+        terms[9, k]  = -5.58052e+00 * s
+        terms[10, k] =  3.80298e-01 * u[k-1] * u[k-1] * (u[k-1] - u[k])
+        terms[11, k] =  4.62254e-01 * (u[k-1] - u[k]) * u[k-1]
+        terms[12, k] =  1.18891e-01 * du * y_pred[k-1]
+        terms[13, k] = -3.02835e-02 * u[k]**3 * s
+        terms[14, k] = -7.69282e-01 * du * u[k]
+
+        # saída
+        y_pred[k] = np.sum(terms[:, k])
+
+    return y_pred[1:], terms[:, 1:]
+
     
 
 
@@ -601,9 +647,19 @@ def create_sequences(u_data, y_data, time_steps=30):
 
     return np.array(X), np.array(y)
 
-@keras.saving.register_keras_serializable()
+# @keras.saving.register_keras_serializable()
+# def r_squared(y_true, y_pred):
+#     SS_res = K.sum(K.square(y_true - y_pred))
+#     SS_tot = K.sum(K.square(y_true - K.mean(y_true)))
+#     # return K.clip(1 - SS_res/(SS_tot + K.epsilon()), 0, 1)
+#     return 1 - SS_res/SS_tot
+
+
 def r_squared(y_true, y_pred):
-    SS_res = K.sum(K.square(y_true - y_pred)) 
-    SS_tot = K.sum(K.square(y_true - K.mean(y_true))) 
-    # return K.clip(1 - SS_res/(SS_tot + K.epsilon()), 0, 1) 
-    return 1 - SS_res/SS_tot 
+    y_true = np.asarray(y_true)
+    y_pred = np.asarray(y_pred)
+
+    ss_res = np.sum((y_true - y_pred) ** 2)
+    ss_tot = np.sum((y_true - np.mean(y_true)) ** 2)
+
+    return 1 - ss_res / ss_tot
