@@ -189,7 +189,7 @@ class MGGP:
     def _delAttr(self, ind: Individual) -> None:
         """Remove atributos do indivíduo de forma segura"""
         
-        attrs_to_remove = ['fitness.values', '_funcs', '_lagMax', 'funcs', 'kfuncs', 'lagMax']
+        attrs_to_remove = ['fitness.values', 'funcs', 'lagMax', 'kfuncs']
         
         for attr in attrs_to_remove:
             try:
@@ -324,7 +324,7 @@ class MGGP:
             else:
                 theta_value = model.leastSquares(self.outputs, self.inputs)
 
-        model._theta = list(theta_value)
+        model.theta = list(theta_value)
         
         self.save_model(model)
         record = {'fitness': self._stats.compile(self._pop)}
@@ -366,7 +366,7 @@ class MGGP:
                     
                     align = self.evaluationType
                     theta_value = ind.hysteretic_constrained_ls(self.outputs, self.inputs, align)
-                    ind._theta = theta_value
+                    ind.theta = theta_value
 
                     if not self._check_hysteretic_constraints(ind):
                         return (np.inf,)  
@@ -381,7 +381,7 @@ class MGGP:
                         
                         theta_value = ind.leastSquares(self.outputs, self.inputs)
 
-                    ind._theta = theta_value
+                    ind.theta = theta_value
 
                 args = (self.outputs, self.inputs) if self.evaluationType != "MShooting" else (self.k, self.outputs, self.inputs)
                 yp, yd = ind.predict(self.evaluationType, *args)
@@ -391,7 +391,7 @@ class MGGP:
                 return error,
             
             elif self.problem_type == 'classification':
-                ind._logistic_model = True
+                ind.logistic_model = True
                 
                 if self.mode == "FIR":
                     align = self._fir_align(self.evaluationType)  # "INSTANT" ou "OSA"
@@ -401,7 +401,7 @@ class MGGP:
                 else:
                     theta_value = ind.leastSquares(self.outputs, self.inputs)
                 
-                ind._theta = theta_value
+                ind.theta = theta_value
                 
                 args = (self.outputs, self.inputs) if self.evaluationType != "MShooting" else (self.k, self.outputs, self.inputs)
                 
@@ -487,14 +487,14 @@ class MGGP:
         
         else:
             if self.problem_type == "classification":
-                model._logistic_model = True
+                model.logistic_model = True
             
             if 'sign' in self.operators: 
                 theta_value = model.hysteretic_constrained_ls(self.outputs, self.inputs)
             else:
                 theta_value = model.leastSquares(self.outputs, self.inputs)
 
-        model._theta = list(theta_value)
+        model.theta = list(theta_value)
         
         self.save_model(model)
 
@@ -504,7 +504,7 @@ class MGGP:
             print("----------- Model -----------")
             print(model)
             print("----------- Theta -----------")
-            print(model._theta)
+            print(model.theta)
 
         self.validation_all(model=model)
 
@@ -630,7 +630,7 @@ class MGGP:
         
         model = element.buildModelFromList(model_data['model_structure'])
         element.compileModel(model)
-        model._theta = model_data['theta']
+        model.theta = model_data['theta']
         
         return model
     
@@ -646,7 +646,7 @@ class MGGP:
         
         model_data = {
             'model_structure': model.model2List(),
-            'theta': model._theta,
+            'theta': model.theta,
             'nInputs': self.nInputs,
             'nOutputs': self.nOutputs,
             'nTerms': self.nTerms,
@@ -666,7 +666,7 @@ class MGGP:
         """
         try:
             clusters = ind.identify_term_clusters(self.outputs, self.inputs)
-            theta = np.asarray(ind._theta).flatten() 
+            theta = np.asarray(ind.theta).flatten() 
             
             linear_output_sum = sum(theta[idx] for idx in clusters['linear_output'])
             if abs(linear_output_sum - 1.0) > tol:
@@ -727,13 +727,13 @@ class MGGP:
             return _is_q_chain_to_u(tree, child_idx)
 
 
-        def _make_q1_u1_tree(pset) -> gp.PrimitiveTree:
+        def _make_q1_u1_tree(pset: gp.PrimitiveSet) -> gp.PrimitiveTree:
             q1 = next(p for p in pset.primitives[pset.ret] if p.name == "q1")
             u1 = next(t for t in pset.terminals[pset.ret] if getattr(t, "value", None) == "u1")
             return gp.PrimitiveTree([q1, u1])
         
         
-        def _make_u1_tree(pset) -> gp.PrimitiveTree:
+        def _make_u1_tree(pset: gp.PrimitiveSet) -> gp.PrimitiveTree:
             u1 = next(t for t in pset.terminals[pset.ret] if getattr(t, "value", None) == "u1")
             return gp.PrimitiveTree([u1])
 

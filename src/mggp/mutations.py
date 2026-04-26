@@ -1,12 +1,4 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Mon Apr 24 16:08:38 2023
-
-@author: henrique
-"""
-
 from abc import ABC, abstractmethod
-
 from deap import gp, base
 from mggp.base import Individual
 import random

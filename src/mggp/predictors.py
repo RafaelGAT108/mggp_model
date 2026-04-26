@@ -20,13 +20,13 @@ def mimo_FIR_INSTANT(ind: "Individual", y_true: np.ndarray, u: np.ndarray) -> tu
       y_pred[k,:] alinhado com y_true[k,:], iniciando em k = lagMax
     """
     regressors = ind.makeRegressors(y_true, u, align="INSTANT")
-    y_pred = [np.dot(regressor, theta) for regressor, theta in zip(regressors, np.array(ind._theta))]
+    y_pred = [np.dot(regressor, theta) for regressor, theta in zip(regressors, np.array(ind.theta))]
     return np.array(y_pred).T, y_true[ind.lagMax:]
 
 
 def mimo_INSTANT(ind: "Individual", y_true: np.ndarray, u: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     regressors = ind.makeRegressors(y_true, u, align="instant")
-    yp = [np.dot(regressor, theta) for regressor, theta in zip(regressors, np.array(ind._theta))]
+    yp = [np.dot(regressor, theta) for regressor, theta in zip(regressors, np.array(ind.theta))]
     y_pred = np.array(yp).T
     y_true = y_true[ind.lagMax:]          # mesmo instante
     return y_pred, y_true
@@ -38,7 +38,7 @@ def mimo_CLASSIFY(ind: "Individual", y_true: np.ndarray, u: np.ndarray) -> tuple
     Alinha y_pred[k] com y_true[k], iniciando em k = lagMax.
     """
     regressors = ind.makeRegressors(y_true, u)
-    yp = [np.dot(regressor, theta) for regressor, theta in zip(regressors, np.array(ind._theta))]
+    yp = [np.dot(regressor, theta) for regressor, theta in zip(regressors, np.array(ind.theta))]
     return np.array(yp).T, y_true[ind.lagMax:]
 
 
@@ -75,7 +75,7 @@ def mimo_OSA(ind: "Individual", y_true: np.ndarray, u: np.ndarray) -> tuple[np.n
         u   = m-dimensional array with input data
     """
     regressors = ind.makeRegressors(y_true, u)
-    y_pred = [np.dot(regressor, theta) for regressor, theta in zip(regressors, np.array(ind._theta))]
+    y_pred = [np.dot(regressor, theta) for regressor, theta in zip(regressors, np.array(ind.theta))]
 
     return np.array(y_pred).T, y_true[ind.lagMax + 1:]
 
@@ -109,11 +109,11 @@ def miso_FreeRun(ind: "Individual", y_true: np.ndarray, u: np.ndarray) -> tuple[
         regressors = [1.0]
 
         for j in range(len(ind)):
-            func = ind._funcs[j]
+            func = ind.funcs[j]
             out = func(*listV)
             # regressors.append(float(out[-1]))
             try:
-                val = float(out[-1])
+                val = float(out[-1][0])
 
             except (IndexError, ValueError):
                 val = 0.0
@@ -163,7 +163,7 @@ def mimo_FreeRun(ind: "Individual", y_true: np.ndarray, u: np.ndarray) -> tuple[
 
             for j in range(len(ind[idx_output])):
 
-                func = ind._funcs[idx_output][j]
+                func = ind.funcs[idx_output][j]
                 out = func(*listV)
 
                 regressors.append(float(out[-1]))
@@ -218,11 +218,11 @@ def mimo_FIR_FreeRun(ind: "Individual", y_true: np.ndarray, u: np.ndarray) -> tu
 
             for idx_equation_tree in range(len(ind[idx_output])):
 
-                genetic_programming_term = ind._funcs[idx_output][idx_equation_tree]
+                genetic_programming_term = ind.funcs[idx_output][idx_equation_tree]
                 out = genetic_programming_term(*listV)
                 regressors.append(float(out[-1])) 
             
-            y_pred[step, idx_output] = np.dot(regressors, ind._theta[idx_output])
+            y_pred[step, idx_output] = np.dot(regressors, ind.theta[idx_output])
 
         y_history = np.column_stack([y_history.T, y_pred[step, :]]).T
 
@@ -261,7 +261,7 @@ def miso_MShooting(ind: "Individual", k: int, y: np.ndarray, u: np.ndarray) -> t
 
         for idx_output_equation in range(len(ind)):
 
-            genetic_programming_term = ind._funcs[idx_output_equation]
+            genetic_programming_term = ind.funcs[idx_output_equation]
 
             y_window = [y_pred[:, shooting:shooting + initial_conditions_size, :]]
             u_window = [v[:, shooting:shooting + initial_conditions_size + 1, :] for v in listU]
@@ -317,7 +317,7 @@ def mimo_MShooting(ind: "Individual", k: int, y_true: np.ndarray, u: np.ndarray)
 
             for idx_tree in range(len(ind[idx_output_equation])):
 
-                genetic_programming_term = ind._funcs[idx_output_equation][idx_tree]
+                genetic_programming_term = ind.funcs[idx_output_equation][idx_tree]
                 out = genetic_programming_term(*listV)
                 out = out[:, -1:, :]
 
@@ -370,13 +370,13 @@ def mimo_FIR_MShooting(ind: "Individual", k: int, y_true: np.ndarray, u: np.ndar
 
             for idx_equation_tree in range(len(ind[idx_output_equation])):
 
-                func = ind._funcs[idx_output_equation][idx_equation_tree]
+                func = ind.funcs[idx_output_equation][idx_equation_tree]
                 out = func(*listV)
                 out = out[:, initial_conditions_size:, :]
                 regressors.append(out)
 
             regressors = np.concatenate(regressors, axis=2)
-            output_pred = np.dot(regressors, ind._theta[idx_output_equation].T).reshape(-1, 1, 1)
+            output_pred = np.dot(regressors, ind.theta[idx_output_equation].T).reshape(-1, 1, 1)
             predictions_for_output_equation.append(output_pred)
         
         predictions_for_output_equation = np.concatenate(predictions_for_output_equation, axis=2)

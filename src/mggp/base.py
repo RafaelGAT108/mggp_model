@@ -1,10 +1,3 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Apr 2023
-
-@author: Henrique Castro
-"""
-
 import pickle
 from functools import partial
 from abc import abstractmethod
@@ -16,12 +9,12 @@ import operator
 import numpy as np
 import re
 from sklearn.metrics import mean_squared_error, accuracy_score, log_loss
-from numba import njit
 from .predictors import miso_OSA, miso_FreeRun, miso_MShooting, mimo_CLASSIFY, miso_FIR_INSTANT, mimo_FIR_INSTANT, miso_CLASSIFY
 from .predictors import mimo_OSA, mimo_FreeRun, mimo_MShooting, mimo_FIR_MShooting, mimo_FIR_FreeRun
 # from sklearn.preprocessing import LabelBinarizer
 import warnings
 warnings.filterwarnings('ignore')
+
 def _roll(*args, i):
     return np.roll(*args, shift=i)
 
@@ -41,30 +34,29 @@ def div(X1, X2):
 class Individual(list):
     def __init__(self, data: List = []):
         super().__init__(data)
-        self._funcs = []
-        self._lagMax = None
-        self._theta = np.array([])
-        self._terminals = ''
-        self._nTerms = 0
-        self._logistic_model = None 
-        self._label_binarizer = None  
+        self.funcs = []
+        self.lagMax = None
+        self.theta = np.array([])
+        self.terminals = ''
+        self.nTerms = 0
+        self.logistic_model = None 
         
 
-    @property
-    def theta(self):
-        return self._theta
+    # @property
+    # def theta(self):
+    #     return self._theta
 
-    @theta.setter
-    def theta(self, theta):
-        self._theta = theta
+    # @theta.setter
+    # def theta(self, theta):
+    #     self._theta = theta
 
-    @property
-    def lagMax(self):
-        return self._lagMax
+    # @property
+    # def lagMax(self):
+    #     return self._lagMax
 
-    @lagMax.setter
-    def lagMax(self, lag):
-        self._lagMax = lag
+    # @lagMax.setter
+    # def lagMax(self, lag):
+    #     self._lagMax = lag
 
     @abstractmethod
     def makeRegressors(self, y: np.ndarray, u: np.ndarray):
@@ -82,8 +74,8 @@ class Individual(list):
         theta_ls = np.linalg.lstsq(p, yd, rcond=None)[0]
         
         if constraints is None:
-            self._theta = theta_ls
-            return self._theta
+            self.theta = theta_ls
+            return self.theta
         
         S = constraints['S']  # Matriz de restrições
         c = constraints['c'].reshape(-1, 1)  # Vetor de restrições
@@ -97,8 +89,8 @@ class Individual(list):
         
         theta_cls = theta_ls - term1 @ term2 @ term3
         
-        self._theta = theta_cls
-        return self._theta
+        self.theta = theta_cls
+        return self.theta
     
 
     def identify_term_clusters(self, y: np.ndarray, u: np.ndarray) -> dict:
@@ -210,7 +202,7 @@ class Individual(list):
             return 'bias'  
         
         # Para MISO/FIR
-        if hasattr(self, '_funcs') and len(self._funcs) > term_index - 1:
+        if hasattr(self, 'funcs') and len(self.funcs) > term_index - 1:
             tree_str = str(self[term_index - 1]).lower()
             
             # Verifica se contém funções phi
@@ -319,7 +311,7 @@ class Individual(list):
         else:
             raise Exception("Choose a mode between: INSTANT")
         
-        if self._logistic_model is not None:            
+        if self.logistic_model is not None:            
             # probabilities = np.array([one_hot_argmax(x) for x in X_regressors])
             pred_one_hot_encode = np.array([one_hot_argmax(softmax(x)) for x in X_regressors])
             # pred_labels = np.array([np.argmax(prob) for prob in pred_one_hot_encode])
@@ -449,9 +441,9 @@ class Individual(list):
             var = node.value           
             base = var
 
-            if base == "u":
+            if base.startswith('u'):
                 lag = lag_acc
-            elif base == "y":
+            elif base.startswith('y'):
                 lag = lag_acc + 1
             else:
                 lag = lag_acc
@@ -529,7 +521,7 @@ class Element(object):
         self.iniciatePrimitivesSets()
 
         self._weights = weights
-        self._nTerms = nTerms
+        self.nTerms = nTerms
         self._nOutputs = nOutputs
         self._maxHeight = maxHeight     
 
@@ -609,14 +601,14 @@ class Element(object):
         if self._mode == "SISO":
             
             creator.create("Individual", IndividualSISO, fitness=creator.FitnessMin)
-            self._toolbox.register("individual", tools.initRepeat, creator.Individual, self._toolbox._program, self._nTerms)
+            self._toolbox.register("individual", tools.initRepeat, creator.Individual, self._toolbox._program, self.nTerms)
         
         elif self._mode == "MISO" or (self._mode == "FIR" and self._nOutputs == 1):
         # Para MISO ou FIR SISO (1 saída)
-            self._toolbox.register("individual", tools.initRepeat, creator.Individual, self._toolbox._program, self._nTerms)
+            self._toolbox.register("individual", tools.initRepeat, creator.Individual, self._toolbox._program, self.nTerms)
         
         elif self._mode == "MIMO" or (self._mode == "FIR" and self._nOutputs > 1):
-            self._toolbox.register("_outputs", tools.initRepeat, list, self._toolbox._program, self._nTerms)
+            self._toolbox.register("_outputs", tools.initRepeat, list, self._toolbox._program, self.nTerms)
             self._toolbox.register("individual", tools.initRepeat, creator.Individual, self._toolbox._outputs, self._nOutputs)
         
         self._toolbox.register("population", tools.initRepeat, list, self._toolbox.individual)
@@ -673,14 +665,14 @@ class Element(object):
 
     def compileModel(self, model) -> None:
         if self._mode == 'SISO':
-            model._funcs = [gp.compile(tree, self.pset) for tree in model]
+            model.funcs = [gp.compile(tree, self.pset) for tree in model]
 
         elif self._mode == 'MISO' or self._mode == "FIR" and self._nOutputs == 1:
-            model._funcs = [gp.compile(tree, self.pset) for tree in model]
+            model.funcs = [gp.compile(tree, self.pset) for tree in model]
 
         elif self._mode == 'MIMO' or (self._mode == "FIR" and self._nOutputs > 1):
-            model._funcs = [[gp.compile(tree, self.pset) for tree in out] for out in model]
-            # model._funcs = [[self._compile_to_function(tree, self.pset) for tree in out] for out in model]
+            model.funcs = [[gp.compile(tree, self.pset) for tree in out] for out in model]
+            # model.funcs = [[self._compile_to_function(tree, self.pset) for tree in out] for out in model]
 
         self._setModelLagMax(model)
 
@@ -732,19 +724,19 @@ class Element(object):
                     elif type(tree[i]) == gp.Terminal:
                         if branches == []:
                             lag = count
-                            model._terminals += str(tree[i].value) + '[i-%d] * ' % (count + 1)
+                            model.terminals += str(tree[i].value) + '[i-%d] * ' % (count + 1)
                         else:
                             branches[-1][2] += 1
                             lag = count + sum([item[0] for item in branches])
-                            model._terminals += tree[i].value + '[i-%d] * ' % (lag + 1)
+                            model.terminals += tree[i].value + '[i-%d] * ' % (lag + 1)
                         if lag > lagMax:
                             lagMax = lag
                         count = 0
                         checkbranch(branches)
                     i += 1
                 treelags.append(lagMax)
-                model._terminals += '\n'
-            model._terminals += '\n'
+                model.terminals += '\n'
+            model.terminals += '\n'
             return max(treelags)
 
         if self._mode == "SISO":
@@ -756,7 +748,7 @@ class Element(object):
         elif self._mode == "MIMO" or (self._mode == "FIR" and self._nOutputs > 1):
             aux = []
             for i, out in enumerate(model):
-                model._terminals += 'Output %d:\n\n' % (i + 1)
+                model.terminals += 'Output %d:\n\n' % (i + 1)
                 aux.append(checkOut(out))
             model.lagMax = max(aux)
 
@@ -776,19 +768,17 @@ class Element(object):
 
 
 
-@njit
 def theta_miso(p, yd):
     return np.linalg.inv(p.T @ p) @ p.T @ yd
     # return np.linalg.lstsq(p, yd, rcond=None)[0]
 
 
-# @njit
 def theta_mimo(p, yd):
     # return np.dot(np.dot(np.linalg.inv(np.dot(p.T, p)), p.T), yd)
     return np.linalg.lstsq(p, yd, rcond=None)[0]
     # return cp.linalg.lstsq(cp.asarray(p), cp.asarray(yd), rcond=None)[0]
 
-@njit
+
 def theta_fir(p, yd):
     return np.linalg.inv(p.T @ p) @ p.T @ yd
 
@@ -833,7 +823,7 @@ class IndividualSISO(Individual):
         p = np.ones((n_samples, len(self) + 1))
 
         for i in range(len(self)):
-            func = self._funcs[i]
+            func = self.funcs[i]
             out = func(*listV).reshape(-1)
 
             if len(out) != n_samples:
@@ -849,10 +839,10 @@ class IndividualSISO(Individual):
 
         yd = y[self.lagMax:]
 
-        self._theta = np.linalg.lstsq(p, yd, rcond=None)[0]
-        if len(self._theta.shape) == 1:
-            self._theta = self._theta.reshape(-1, 1)
-        return self._theta
+        self.theta = np.linalg.lstsq(p, yd, rcond=None)[0]
+        if len(self.theta.shape) == 1:
+            self.theta = self.theta.reshape(-1, 1)
+        return self.theta
     
 
     def __str__(self) -> str:
@@ -924,7 +914,7 @@ class IndividualMISO(Individual):
     #     else:
     #         raise Exception("Choose a mode between: INSTANT")
         
-    #     if self._logistic_model is not None:            
+    #     if self.logistic_model is not None:            
     #         # probabilities = np.array([one_hot_argmax(x) for x in X_regressors])
     #         pred_one_hot_encode = np.array([one_hot_argmax(softmax(x)) for x in X_regressors])
     #         # pred_labels = np.array([np.argmax(prob) for prob in pred_one_hot_encode]).astype(np.float64)
@@ -944,7 +934,7 @@ class IndividualMISO(Individual):
         if y.shape[1] > 1:
             raise Exception('Wrong number of outputs. The algorithm is set',
                             'for a single output')
-        is_classification = bool(getattr(self, "_logistic_model", False))
+        is_classification = bool(getattr(self, "logistic_model", False))
 
         listV = []
         if is_classification:
@@ -969,7 +959,7 @@ class IndividualMISO(Individual):
         p = np.ones((n_samples, len(self) + 1))
 
         for i in range(len(self)):
-            func = self._funcs[i]
+            func = self.funcs[i]
             out = func(*listV)
             p[:, i + 1] = out.reshape(-1)[self.lagMax:]
 
@@ -988,15 +978,15 @@ class IndividualMISO(Individual):
         # if np.linalg.cond(p, -2) < 1e-10:
         #     raise np.linalg.LinAlgError('Ill conditioned regressors matrix!')
         
-        is_classification = bool(getattr(self, "_logistic_model", False))
+        is_classification = bool(getattr(self, "logistic_model", False))
         offset = 0 if is_classification else 1  # <-- chave do alinhamento
 
         yd = y[self.lagMax + offset:]
-        # self._theta = np.linalg.inv(p.T @ p) @ p.T @ yd
-        self._theta = theta_miso(p, yd)
-        if len(self._theta.shape) == 1:
-            self._theta = self._theta.reshape(-1, 1)
-        return self._theta
+        # self.theta = np.linalg.inv(p.T @ p) @ p.T @ yd
+        self.theta = theta_miso(p, yd)
+        if len(self.theta.shape) == 1:
+            self.theta = self.theta.reshape(-1, 1)
+        return self.theta
 
 
     def __str__(self) -> str:
@@ -1026,7 +1016,7 @@ class IndividualMIMO(Individual):
         if y.shape[1] == 1:
             raise Exception('Wrong number of outputs. The algorithm is set for multiple outputs')
         
-        # is_classification = bool(getattr(self, "_logistic_model", False))
+        # is_classification = bool(getattr(self, "logistic_model", False))
         
         listV = []
         for v in y.T:
@@ -1053,7 +1043,7 @@ class IndividualMIMO(Individual):
                 
             p = np.ones((n_samples, len(self[o]) + 1))
             for i in range(len(self[o])):
-                func = self._funcs[o][i]
+                func = self.funcs[o][i]
                 out = func(*listV)
                 p[:, i + 1] = out.reshape(-1)[self.lagMax:] #TODO: GARGALO!!!!
             P.append(p)
@@ -1073,13 +1063,13 @@ class IndividualMIMO(Individual):
 
         P = self.makeRegressors(y, u)
 
-        # is_classification = bool(getattr(self, "_logistic_model", False))
+        # is_classification = bool(getattr(self, "logistic_model", False))
         # offset = 0 if is_classification else 1  # <-- chave do alinhamento
 
         y_slice = y[self.lagMax:, :]   # (N-lagMax) ou (N-lagMax-1)
 
-        self._theta = np.array([theta_mimo(P[o], y_slice[:, o]) for o in range(len(P))])
-        return self._theta
+        self.theta = np.array([theta_mimo(P[o], y_slice[:, o]) for o in range(len(P))])
+        return self.theta
 
 
     def __str__(self) -> str:
@@ -1124,7 +1114,7 @@ class IndividualFIR(Individual):
     #     p = np.ones((u.shape[0] - self.lagMax - 1, len(self) + 1))
 
     #     for i in range(len(self)):
-    #         func = self._funcs[i]
+    #         func = self.funcs[i]
     #         out = func(*listV)
     #         p[:, i + 1] = out.reshape(-1)[self.lagMax:]
     #     return p
@@ -1142,11 +1132,11 @@ class IndividualFIR(Individual):
     #         raise np.linalg.LinAlgError(
     #             'Ill conditioned regressors matrix!')
     #     yd = y[self.lagMax + 1:]
-    #     # self._theta = np.linalg.inv(p.T @ p) @ p.T @ yd
-    #     self._theta = theta_fir(p, yd)
-    #     if len(self._theta.shape) == 1:
-    #         self._theta = self._theta.reshape(-1, 1)
-    #     return self._theta
+    #     # self.theta = np.linalg.inv(p.T @ p) @ p.T @ yd
+    #     self.theta = theta_fir(p, yd)
+    #     if len(self.theta.shape) == 1:
+    #         self.theta = self.theta.reshape(-1, 1)
+    #     return self.theta
 
     def predict(self, mode: str ="OSA", *args: tuple) -> tuple[np.ndarray, np.ndarray]:
         if mode == "OSA":
@@ -1186,7 +1176,7 @@ class IndividualFIR(Individual):
         p = np.ones((n_samples, len(self) + 1))
 
         for i in range(len(self)):
-            func = self._funcs[i]
+            func = self.funcs[i]
             out = func(*listV)
             p[:, i + 1] = out.reshape(-1)[self.lagMax:]
 
@@ -1208,11 +1198,11 @@ class IndividualFIR(Individual):
         else:
             yd = y[self.lagMax + 1:]
 
-        self._theta = theta_fir(p, yd)
-        if len(self._theta.shape) == 1:
-            self._theta = self._theta.reshape(-1, 1)
+        self.theta = theta_fir(p, yd)
+        if len(self.theta.shape) == 1:
+            self.theta = self.theta.reshape(-1, 1)
 
-        return self._theta
+        return self.theta
 
     def __str__(self) -> str:
         string = ''.join('%s\n' * len(self)) % tuple([str(tree) for tree in self])
@@ -1237,7 +1227,7 @@ class IndividualFIRMIMO(Individual):
     #     for o in range(len(self)):  # Para cada saída
     #         p = np.ones((u.shape[0] - self.lagMax - 1, len(self[o]) + 1))
     #         for i in range(len(self[o])):  # Para cada termo da saída
-    #             func = self._funcs[o][i]
+    #             func = self.funcs[o][i]
     #             out = func(*listV)
     #             p[:, i + 1] = out.reshape(-1)[self.lagMax:]
     #         P.append(p)
@@ -1245,8 +1235,8 @@ class IndividualFIRMIMO(Individual):
 
     # def leastSquares(self, y, u):
     #     P = self.makeRegressors(y, u)
-    #     self._theta = np.array([theta_mimo(P[o], y[self.lagMax + 1:, o]) for o in range(len(P))])
-    #     return self._theta
+    #     self.theta = np.array([theta_mimo(P[o], y[self.lagMax + 1:, o]) for o in range(len(P))])
+    #     return self.theta
     
     # def predict(self, mode="OSA", *args):
     #     if mode == "OSA":
@@ -1258,20 +1248,21 @@ class IndividualFIRMIMO(Individual):
     #     else:
     #         raise Exception("Choose a mode between: OSA, FreeRun, MShooting")
 
+
     def makeRegressors(self, y: np.ndarray, u: np.ndarray, align: str ="OSA") -> List[np.ndarray]:
         if len(u.shape) == 1:
             u = u.reshape(-1, 1)
 
         listV = []
-        if align == 'INSTANT':
-            for v in u.T:
-                listV.append(v.reshape(-1, 1))
-            n_samples = u.shape[0] - self.lagMax
+        # if align == 'INSTANT':
+        for v in u.T:
+            listV.append(v.reshape(-1, 1))
+        n_samples = u.shape[0] - self.lagMax
 
-        else: 
-            for v in u.T:
-                listV.append(v[:-1].reshape(-1, 1))
-            n_samples = u.shape[0] - self.lagMax - 1
+        # else:
+        #     for v in u.T:
+        #         listV.append(v[:-1].reshape(-1, 1))
+        #     n_samples = u.shape[0] - self.lagMax - 1
 
         if n_samples <= 0:
             raise ValueError("Not enough samples for the chosen lagMax/alignment.")
@@ -1281,24 +1272,26 @@ class IndividualFIRMIMO(Individual):
             p = np.ones((n_samples, len(self[o]) + 1))
             
             for i in range(len(self[o])):  # Para cada termo da saída
-                func = self._funcs[o][i]
+                func = self.funcs[o][i]
                 out = func(*listV)
                 p[:, i + 1] = out.reshape(-1)[self.lagMax:]
             
             P.append(p)
         return P
 
+
     def leastSquares(self, y: np.ndarray, u: np.ndarray, align: str ="OSA") -> np.ndarray:
         P = self.makeRegressors(y, u, align=align)
 
-        if align == "INSTANT":
-            y_slice = y[self.lagMax:, :]
+        # if align == "INSTANT":
+        y_slice = y[self.lagMax:, :]
 
-        else:
-            y_slice = y[self.lagMax + 1:, :]
+        # else:
+        #     y_slice = y[self.lagMax + 1:, :]
 
-        self._theta = np.array([theta_mimo(P[o], y_slice[:, o]) for o in range(len(P))])
-        return self._theta
+        self.theta = np.array([theta_mimo(P[o], y_slice[:, o]) for o in range(len(P))])
+        return self.theta
+
 
     def predict(self, mode: str ="OSA", *args: tuple) -> tuple[np.ndarray, np.ndarray]:
         if mode == "OSA":
@@ -1311,6 +1304,7 @@ class IndividualFIRMIMO(Individual):
             return mimo_FIR_MShooting(self, *args)
         else:
             raise Exception("Choose a mode between: OSA, INSTANT, FreeRun, MShooting")
+
 
     def __str__(self) -> str:
         string = ''
