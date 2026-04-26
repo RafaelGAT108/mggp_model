@@ -8,10 +8,8 @@ from deap import gp, creator, base, tools
 import operator
 import numpy as np
 import re
-from sklearn.metrics import mean_squared_error, accuracy_score, log_loss
 from .predictors import miso_OSA, miso_FreeRun, miso_MShooting, mimo_CLASSIFY, miso_FIR_INSTANT, mimo_FIR_INSTANT, miso_CLASSIFY
 from .predictors import mimo_OSA, mimo_FreeRun, mimo_MShooting, mimo_FIR_MShooting, mimo_FIR_FreeRun
-# from sklearn.preprocessing import LabelBinarizer
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -29,6 +27,82 @@ def sin(X1):
 
 def div(X1, X2):
     return X1 / X2
+
+def mean_squared_error(y_true, y_pred):
+    """
+    Mean Squared Error (MSE)
+    """
+    y_true = np.asarray(y_true)
+    y_pred = np.asarray(y_pred)
+
+    if y_true.shape != y_pred.shape:
+        raise ValueError("y_true and y_pred must have the same shape")
+
+    return np.mean((y_true - y_pred) ** 2)
+
+
+def accuracy_score(y_true, y_pred):
+    """
+    Accuracy Score
+    """
+    y_true = np.asarray(y_true)
+    y_pred = np.asarray(y_pred)
+
+    if y_true.shape != y_pred.shape:
+        raise ValueError("y_true and y_pred must have the same shape")
+
+    return np.mean(y_true == y_pred)
+
+
+def log_loss(y_true, y_pred, eps=1e-15):
+    """
+    Log Loss (Cross-Entropy)
+
+    Suporta:
+    - Binário: y_true em {0,1}, y_pred probabilidade da classe 1
+    - Multiclasse: y_true como labels inteiros ou one-hot, y_pred como probs
+    """
+
+    y_true = np.asarray(y_true)
+    y_pred = np.asarray(y_pred)
+
+    # Clipping para evitar log(0)
+    y_pred = np.clip(y_pred, eps, 1 - eps)
+
+    # Caso binário
+    if y_pred.ndim == 1:
+        if y_true.shape != y_pred.shape:
+            raise ValueError("Shape mismatch for binary case")
+
+        return -np.mean(
+            y_true * np.log(y_pred) +
+            (1 - y_true) * np.log(1 - y_pred)
+        )
+
+    # Caso multiclasse
+    elif y_pred.ndim == 2:
+        n_samples, n_classes = y_pred.shape
+
+        # Se y_true está como labels (inteiros)
+        if y_true.ndim == 1:
+            if len(y_true) != n_samples:
+                raise ValueError("y_true length mismatch")
+
+            return -np.mean(np.log(y_pred[np.arange(n_samples), y_true]))
+
+        # Se y_true é one-hot
+        elif y_true.ndim == 2:
+            if y_true.shape != y_pred.shape:
+                raise ValueError("Shape mismatch for one-hot case")
+
+            return -np.mean(np.sum(y_true * np.log(y_pred), axis=1))
+
+        else:
+            raise ValueError("Invalid y_true format")
+
+    else:
+        raise ValueError("Invalid y_pred dimensions")
+
 
 
 class Individual(list):
@@ -67,7 +141,7 @@ class Individual(list):
         pass
 
 
-    def constrained_least_squares(self, y: np.ndarray, u: np.ndarray, p: np.ndarray, align: str ='OSA', constraints=None) -> np.ndarray:
+    def constrained_least_squares(self, y: np.ndarray, p: np.ndarray, constraints=None) -> np.ndarray:
 
         yd = y[self.lagMax:]
         
@@ -233,7 +307,7 @@ class Individual(list):
         return not any(op in tree_str for op in non_linear_ops)
     
 
-    def hysteretic_constrained_ls(self, y: np.ndarray, u: np.ndarray, align: str ='OSA', tol: float =1e-8) -> np.ndarray:
+    def hysteretic_constrained_ls(self, y: np.ndarray, u: np.ndarray) -> np.ndarray:
         """Constrained LS enforcing the hysteretic equilibrium conditions (Property 1).
 
         Enforced constraints (paper Section 3):
@@ -280,7 +354,7 @@ class Individual(list):
         S = np.vstack([c[0] for c in constraints])
         c = np.array([c[1] for c in constraints])
 
-        return self.constrained_least_squares(y, u, p, align, {"S": S, "c": c})
+        return self.constrained_least_squares(y, p, {"S": S, "c": c})
 
 
     def predict_proba(self, mode: str ="INSTANT", *args: tuple) -> tuple[np.ndarray, np.ndarray]:
@@ -802,7 +876,7 @@ class IndividualSISO(Individual):
             raise Exception("Choose a mode between: OSA, FreeRun, MShooting")
     
 
-    def makeRegressors(self, y: np.ndarray, u: np.ndarray, align: str = "OSA") -> np.ndarray:
+    def makeRegressors(self, y: np.ndarray, u: np.ndarray) -> np.ndarray:
 
         if len(y.shape) == 1:
             y = y.reshape(-1, 1)
@@ -834,7 +908,7 @@ class IndividualSISO(Individual):
         return p
     
     
-    def leastSquares(self, y: np.ndarray, u: np.ndarray, align: str ='OSA') -> np.ndarray:
+    def leastSquares(self, y: np.ndarray, u: np.ndarray) -> np.ndarray:
         p = self.makeRegressors(y, u)
 
         yd = y[self.lagMax:]
@@ -865,8 +939,6 @@ class IndividualSISO(Individual):
             string += f"{self.theta[j+1][0]:.5e} * {expr} + \n"
 
         return string
-
-
 
 
 class IndividualMISO(Individual):
@@ -1015,33 +1087,20 @@ class IndividualMIMO(Individual):
 
         if y.shape[1] == 1:
             raise Exception('Wrong number of outputs. The algorithm is set for multiple outputs')
-        
-        # is_classification = bool(getattr(self, "logistic_model", False))
-        
+
         listV = []
         for v in y.T:
-            # if is_classification:
             listV.append(v.reshape(-1, 1))
-
-            # else:
-            #     listV.append(v[:-1].reshape(-1, 1))
         
         for v in u.T:
-            # if is_classification:
             listV.append(v.reshape(-1, 1))
-
-            # else:
-            #     listV.append(v[:-1].reshape(-1, 1))
 
         P = []
         for o in range(len(self)):
-            
-            # if is_classification:
+
             n_samples = y.shape[0] - self.lagMax
-            # else:
-            #     n_samples = y.shape[0] - self.lagMax - 1
-                
             p = np.ones((n_samples, len(self[o]) + 1))
+
             for i in range(len(self[o])):
                 func = self.funcs[o][i]
                 out = func(*listV)
@@ -1249,20 +1308,14 @@ class IndividualFIRMIMO(Individual):
     #         raise Exception("Choose a mode between: OSA, FreeRun, MShooting")
 
 
-    def makeRegressors(self, y: np.ndarray, u: np.ndarray, align: str ="OSA") -> List[np.ndarray]:
+    def makeRegressors(self, y: np.ndarray, u: np.ndarray) -> List[np.ndarray]:
         if len(u.shape) == 1:
             u = u.reshape(-1, 1)
 
         listV = []
-        # if align == 'INSTANT':
         for v in u.T:
             listV.append(v.reshape(-1, 1))
         n_samples = u.shape[0] - self.lagMax
-
-        # else:
-        #     for v in u.T:
-        #         listV.append(v[:-1].reshape(-1, 1))
-        #     n_samples = u.shape[0] - self.lagMax - 1
 
         if n_samples <= 0:
             raise ValueError("Not enough samples for the chosen lagMax/alignment.")
@@ -1280,14 +1333,10 @@ class IndividualFIRMIMO(Individual):
         return P
 
 
-    def leastSquares(self, y: np.ndarray, u: np.ndarray, align: str ="OSA") -> np.ndarray:
-        P = self.makeRegressors(y, u, align=align)
+    def leastSquares(self, y: np.ndarray, u: np.ndarray) -> np.ndarray:
+        P = self.makeRegressors(y, u)
 
-        # if align == "INSTANT":
         y_slice = y[self.lagMax:, :]
-
-        # else:
-        #     y_slice = y[self.lagMax + 1:, :]
 
         self.theta = np.array([theta_mimo(P[o], y_slice[:, o]) for o in range(len(P))])
         return self.theta
