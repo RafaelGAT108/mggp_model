@@ -10,7 +10,7 @@ def miso_FIR_INSTANT(ind: "Individual", y_true: np.ndarray, u: np.ndarray) -> tu
     FIR instantâneo (mesmo instante):
       y_pred[k] alinhado com y_true[k], iniciando em k = lagMax
     """
-    regressors = ind.makeRegressors(y_true, u, align="INSTANT")
+    regressors = ind.makeRegressors(y_true, u)
     return np.dot(regressors, ind.theta), y_true[ind.lagMax:]
 
 
@@ -19,13 +19,13 @@ def mimo_FIR_INSTANT(ind: "Individual", y_true: np.ndarray, u: np.ndarray) -> tu
     FIR instantâneo (MIMO):
       y_pred[k,:] alinhado com y_true[k,:], iniciando em k = lagMax
     """
-    regressors = ind.makeRegressors(y_true, u, align="INSTANT")
+    regressors = ind.makeRegressors(y_true, u)
     y_pred = [np.dot(regressor, theta) for regressor, theta in zip(regressors, np.array(ind.theta))]
     return np.array(y_pred).T, y_true[ind.lagMax:]
 
 
 def mimo_INSTANT(ind: "Individual", y_true: np.ndarray, u: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    regressors = ind.makeRegressors(y_true, u, align="instant")
+    regressors = ind.makeRegressors(y_true, u)
     yp = [np.dot(regressor, theta) for regressor, theta in zip(regressors, np.array(ind.theta))]
     y_pred = np.array(yp).T
     y_true = y_true[ind.lagMax:]          # mesmo instante

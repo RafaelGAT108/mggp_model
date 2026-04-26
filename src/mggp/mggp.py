@@ -164,7 +164,7 @@ class MGGP:
         return "OSA"
 
 
-    def _call_with_align_if_supported(self, fn: callable, *args: tuple, align: str):
+    def _call_with_align_if_supported(self, fn: callable, *args: tuple, align: str = ''):
         """
         Chama fn(*args, align=align) se o parâmetro existir.
         Caso contrário, chama fn(*args).
@@ -172,7 +172,7 @@ class MGGP:
         try:
             sig = inspect.signature(fn)
             if "align" in sig.parameters:
-                return fn(*args, align=align)
+                return fn(*args)
         except (TypeError, ValueError):
             pass
         return fn(*args)
@@ -363,9 +363,8 @@ class MGGP:
         
                     if np.random.random() < self.pruning_probability:
                         self._apply_froe_pruning(ind)
-                    
-                    align = self.evaluationType
-                    theta_value = ind.hysteretic_constrained_ls(self.outputs, self.inputs, align)
+
+                    theta_value = ind.hysteretic_constrained_ls(self.outputs, self.inputs)
                     ind.theta = theta_value
 
                     if not self._check_hysteretic_constraints(ind):
@@ -375,8 +374,7 @@ class MGGP:
                     if self.mode == "FIR":
                         align = self._fir_align(self.evaluationType)
                         theta_value = self._call_with_align_if_supported(
-                            ind.leastSquares, self.outputs, self.inputs, align=align
-                        )
+                            ind.leastSquares, self.outputs, self.inputs)
                     else:
                         
                         theta_value = ind.leastSquares(self.outputs, self.inputs)
@@ -395,9 +393,7 @@ class MGGP:
                 
                 if self.mode == "FIR":
                     align = self._fir_align(self.evaluationType)  # "INSTANT" ou "OSA"
-                    theta_value = self._call_with_align_if_supported(
-                        ind.leastSquares, self.outputs, self.inputs, align=align
-                    )
+                    theta_value = self._call_with_align_if_supported(ind.leastSquares, self.outputs, self.inputs)
                 else:
                     theta_value = ind.leastSquares(self.outputs, self.inputs)
                 
@@ -483,7 +479,7 @@ class MGGP:
 
         if self.mode == "FIR":
             align = self._fir_align(self.evaluationType)
-            theta_value = self._call_with_align_if_supported(model.leastSquares, self.outputs, self.inputs, align=align)
+            theta_value = self._call_with_align_if_supported(model.leastSquares, self.outputs, self.inputs)
         
         else:
             if self.problem_type == "classification":
@@ -792,7 +788,7 @@ class MGGP:
         if self.mode == "FIR":
 
             align = self._fir_align(self.evaluationType)
-            P = self._call_with_align_if_supported(ind.makeRegressors, self.outputs, self.inputs, align=align)
+            P = self._call_with_align_if_supported(ind.makeRegressors, self.outputs, self.inputs)
             yd = self.outputs[ind.lagMax + self._yd_offset(self.evaluationType):]
 
         else:
