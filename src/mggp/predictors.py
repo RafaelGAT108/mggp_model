@@ -283,8 +283,8 @@ def mimo_MShooting(ind: "Individual", k: int, y_true: np.ndarray, u: np.ndarray)
     Multiple-Shooting predictor for MIMO models
     """
 
-    if len(y.shape) == 1:
-        y = y.reshape(-1, 1)
+    if len(y_true.shape) == 1:
+        y_true = y_true.reshape(-1, 1)
     if len(u.shape) == 1:
         u = u.reshape(-1, 1)
 
@@ -295,7 +295,7 @@ def mimo_MShooting(ind: "Individual", k: int, y_true: np.ndarray, u: np.ndarray)
     newshape_u = (n_batchs, batch_size, 1)
     listU = [np.resize(v, newshape_u) for v in u.T]
 
-    y_true = np.resize(y, (n_batchs, batch_size, y.shape[1]))
+    y_true = np.resize(y_true, (n_batchs, batch_size, y_true.shape[1]))
     y_pred = y_true[:, :initial_conditions_size, :]
 
     for shooting in range(k):
@@ -333,13 +333,13 @@ def mimo_MShooting(ind: "Individual", k: int, y_true: np.ndarray, u: np.ndarray)
         predictions_for_output_equation = np.concatenate(predictions_for_output_equation, axis=2)
         y_pred = np.concatenate((y_pred, predictions_for_output_equation), axis=1)
 
-    return np.nan_to_num(y_pred.reshape(-1, y.shape[1]), nan=0), np.nan_to_num(y_true.reshape(-1, y.shape[1]), nan=0)
+    return np.nan_to_num(y_pred.reshape(-1, y_true.shape[1]), nan=0), np.nan_to_num(y_true.reshape(-1, y.shape[1]), nan=0)
 
 
 def mimo_FIR_MShooting(ind: "Individual", k: int, y_true: np.ndarray, u: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 
-    if len(y.shape) == 1:
-        y = y.reshape(-1, 1)
+    if len(y_true.shape) == 1:
+        y_true = y_true.reshape(-1, 1)
     if len(u.shape) == 1:
         u = u.reshape(-1, 1)
     
@@ -352,7 +352,7 @@ def mimo_FIR_MShooting(ind: "Individual", k: int, y_true: np.ndarray, u: np.ndar
     for v in u.T:
         listU.append(np.resize(v, newshape))
 
-    y_true = np.resize(y, (n_batchs, batch_size, y.shape[1]))
+    y_true = np.resize(y_true, (n_batchs, batch_size, y_true.shape[1]))
     y_pred = y_true[:, :initial_conditions_size + 1, :]
 
     for shooting in range(k):
@@ -382,4 +382,4 @@ def mimo_FIR_MShooting(ind: "Individual", k: int, y_true: np.ndarray, u: np.ndar
         predictions_for_output_equation = np.concatenate(predictions_for_output_equation, axis=2)
         y_pred = np.concatenate((y_pred, predictions_for_output_equation), axis=1)
 
-    return np.nan_to_num(y_pred.reshape(-1, y.shape[1]), nan=0), np.nan_to_num(y_true.reshape(-1, y.shape[1]), nan=0)
+    return np.nan_to_num(y_pred.reshape(-1, y_true.shape[1]), nan=0), np.nan_to_num(y_true.reshape(-1, y_true.shape[1]), nan=0)
