@@ -310,7 +310,7 @@ def mimo_MShooting(ind: "Individual", k: int, y_true: np.ndarray, u: np.ndarray)
             out = np.ones((n_batchs, 1, 1))
             regressors.append(out)
 
-            y_window = [y_pred[:, shooting:shooting + initial_conditions_size, i:i+1] for i in range(y_true.shape[1])]
+            y_window = [y_pred[:, shooting:shooting + initial_conditions_size, i:i+1] for i in range(y_pred.shape[2])]
             u_window = [v[:, shooting:shooting + initial_conditions_size + 1, :] for v in listU]
 
             listV = y_window + u_window
@@ -333,7 +333,7 @@ def mimo_MShooting(ind: "Individual", k: int, y_true: np.ndarray, u: np.ndarray)
         predictions_for_output_equation = np.concatenate(predictions_for_output_equation, axis=2)
         y_pred = np.concatenate((y_pred, predictions_for_output_equation), axis=1)
 
-    return np.nan_to_num(y_pred.reshape(-1, y_true.shape[1]), nan=0), np.nan_to_num(y_true.reshape(-1, y_true.shape[1]), nan=0)
+    return np.nan_to_num(y_pred.reshape(-1, y_pred.shape[1]), nan=0), np.nan_to_num(y_true.reshape(-1, y_true.shape[1]), nan=0)
 
 
 def mimo_FIR_MShooting(ind: "Individual", k: int, y_true: np.ndarray, u: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
