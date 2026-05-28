@@ -53,3 +53,39 @@ def mimo_data():
         y[k, 1] = (-0.3 * y[k-1, 1] + 0.4 * u[k-1, 0] + 0.1 * u[k-1, 1])
 
     return u, y
+
+@pytest.fixture
+def hysteresis_siso_data():
+    """
+    Sistema histerético simples SISO.
+
+    Entrada:
+        seno
+
+    Histerese:
+        ganhos diferentes para subida e descida.
+    """
+
+    n = 500
+    t = np.linspace(0, 10*np.pi, n)
+
+    u = np.sin(t).reshape(-1, 1)
+    y = np.zeros((n, 1))
+
+    for k in range(1, n):
+
+        du = u[k] - u[k-1]
+
+        # ramo de subida
+        if du >= 0:
+            a = 0.92
+            b = 0.25
+
+        # ramo de descida
+        else:
+            a = 0.85
+            b = 0.10
+
+        y[k] = (a * y[k-1] + b * u[k])
+
+    return u, y
