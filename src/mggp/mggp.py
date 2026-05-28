@@ -18,8 +18,8 @@ warnings.filterwarnings("ignore")
 class MGGP:
 
     def __init__(self,
-                 inputs: np.ndarray = np.ndarray((0, 0)),
-                 outputs: np.ndarray = np.ndarray((0, 0)),
+                 inputs: np.ndarray = np.array([[0, 0]]),
+                 outputs: np.ndarray = np.array([[0, 0]]),
                  generations: int = 100,
                  validation: Optional[Tuple[np.ndarray, np.ndarray]] = (None, None),
                  evaluationMode: Literal['RMSE', 'MSE', 'MAPE'] = 'RMSE',
