@@ -1,4 +1,4 @@
 ﻿numpy>=1.26
 deap>=1.4
 tqdm>=4.67
-ipython>=9.13.0
+ipython>=8.37.0
