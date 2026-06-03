@@ -1,6 +1,8 @@
 import numpy as np
 import pytest
 import random
+from tensorflow.keras.utils import to_categorical
+from sklearn.model_selection import train_test_split
 
 @pytest.fixture(autouse=True)
 def set_seed():
@@ -89,3 +91,37 @@ def hysteresis_siso_data():
         y[k] = (a * y[k-1] + b * u[k])
 
     return u, y
+
+
+@pytest.fixture
+def classification_data():
+    """
+    Problema de classificação multiclasse sintético.
+
+    Classe 0 -> x1 + x2 < -0.5
+    Classe 1 -> -0.5 <= x1 + x2 <= 0.5
+    Classe 2 -> x1 + x2 > 0.5
+    """
+
+    rng = np.random.default_rng(42)
+
+    X = rng.uniform(-1, 1, size=(300, 2))
+
+    s = X[:, 0] + X[:, 1]
+
+    y = np.zeros(len(s), dtype=int)
+    y[s > 0.5] = 2
+    y[(s >= -0.5) & (s <= 0.5)] = 1
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X,
+        y,
+        test_size=0.2,
+        random_state=42,
+        stratify=y,
+    )
+
+    y_train = to_categorical(y_train, num_classes=3)
+    y_test = to_categorical(y_test, num_classes=3)
+
+    return X_train, X_test, y_train, y_test
