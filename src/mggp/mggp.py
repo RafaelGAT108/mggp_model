@@ -494,14 +494,7 @@ class MGGP:
         
         self.save_model(model)
 
-        try:
-            print(self.simplify_model(model))
-        except:
-            print("----------- Model -----------")
-            print(model)
-            print("----------- Theta -----------")
-            print(model.theta)
-
+        print(self.simplify_model(model))
         self.validation_all(model=model)
 
         end = time.time()
