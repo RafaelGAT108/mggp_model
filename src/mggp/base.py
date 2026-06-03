@@ -114,23 +114,6 @@ class Individual(list):
         self.terminals = ''
         self.nTerms = 0
         self.logistic_model = None 
-        
-
-    # @property
-    # def theta(self):
-    #     return self._theta
-
-    # @theta.setter
-    # def theta(self, theta):
-    #     self._theta = theta
-
-    # @property
-    # def lagMax(self):
-    #     return self._lagMax
-
-    # @lagMax.setter
-    # def lagMax(self, lag):
-    #     self._lagMax = lag
 
     @abstractmethod
     def makeRegressors(self, y: np.ndarray, u: np.ndarray):
@@ -155,14 +138,28 @@ class Individual(list):
         c = constraints['c'].reshape(-1, 1)  # Vetor de restrições
         
         pT_p = p.T @ p
-        pT_p_inv = np.linalg.pinv(pT_p)  
-        
+        pT_p_inv = np.linalg.pinv(pT_p)
+
         term1 = pT_p_inv @ S.T
         term2 = np.linalg.pinv(S @ pT_p_inv @ S.T)
         term3 = S @ theta_ls - c
-        
+
         theta_cls = theta_ls - term1 @ term2 @ term3
-        
+
+        # R = constraints.get("R", np.zeros((p.shape[1], p.shape[1])))
+        # lambda_ridge = constraints.get("lambda", 0.0)
+        #
+        # A = p.T @ p + lambda_ridge * R
+        # A_inv = np.linalg.pinv(A)
+        #
+        # theta_ridge = A_inv @ (p.T @ yd)
+        #
+        # term1 = A_inv @ S.T
+        # term2 = np.linalg.pinv(S @ A_inv @ S.T)
+        # term3 = S @ theta_ridge - c
+        #
+        # theta_cls = theta_ridge - term1 @ term2 @ term3
+
         self.theta = theta_cls
         return self.theta
     
@@ -189,7 +186,7 @@ class Individual(list):
         n_terms = p.shape[1]
 
         clusters = {
-            "bias": [],  
+            "bias": [],
             "linear_output": [],
             "linear_input": [],
             "nonlinear_y": [],
@@ -272,8 +269,8 @@ class Individual(list):
         Classifica um termo baseado em sua estrutura
         """
         if term_index == 0:
-            # return 'linear_output' 
-            return 'bias'  
+            # return 'linear_output'
+            return 'bias'
         
         # Para MISO/FIR
         if hasattr(self, 'funcs') and len(self.funcs) > term_index - 1:
@@ -354,7 +351,21 @@ class Individual(list):
         S = np.vstack([c[0] for c in constraints])
         c = np.array([c[1] for c in constraints])
 
-        return self.constrained_least_squares(y, p, {"S": S, "c": c})
+        lambda_phi = 0
+
+        R = np.zeros((length_model, length_model))
+
+        phi_idxs = clusters["phi_terms"]
+        R[phi_idxs, phi_idxs] = 1.0
+
+        constraints = {
+            "S": S,
+            "c": c,
+            # "R": R,
+            # "lambda": lambda_phi
+        }
+
+        return self.constrained_least_squares(y, p, constraints)
 
 
     def predict_proba(self, mode: str ="INSTANT", *args: tuple) -> tuple[np.ndarray, np.ndarray]:
@@ -895,6 +906,7 @@ class IndividualSISO(Individual):
         listV = [y_reg.reshape(-1, 1), u_reg.reshape(-1, 1)]
 
         p = np.ones((n_samples, len(self) + 1))
+        # p = np.ones((n_samples, len(self)))
 
         for i in range(len(self)):
             func = self.funcs[i]
@@ -904,6 +916,7 @@ class IndividualSISO(Individual):
                 raise ValueError(f"Inconsistent regressor size in term {i}: expected {n_samples}, got {len(out)}")
 
             p[:, i + 1] = out
+            # p[:, i] = out
                     
         return p
     
@@ -937,6 +950,7 @@ class IndividualSISO(Individual):
         for j, tree in enumerate(self):
             expr, _ = self.parse_tree(tree)
             string += f"{self.theta[j+1][0]:.5e} * {expr} + \n"
+            # string += f"{self.theta[j][0]:.5e} * {expr} + \n"
 
         return string
 
