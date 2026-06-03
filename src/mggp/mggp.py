@@ -485,7 +485,7 @@ class MGGP:
             if self.problem_type == "classification":
                 model.logistic_model = True
             
-            if 'sign' in self.operators: 
+            if 'sign' in self.operators:
                 theta_value = model.hysteretic_constrained_ls(self.outputs, self.inputs)
             else:
                 theta_value = model.leastSquares(self.outputs, self.inputs)
