@@ -665,9 +665,35 @@ class MGGP:
                 cluster_sum = sum(theta[idx] for idx in clusters[cluster_type])
                 if abs(cluster_sum) > tol:
                     return False
+
+            # for term in ind:
+            #     # sign_u = str(term).count('sign(u') + str(term).count('sign(q')
+            #     # if sign_u >= 2:
+            #     #     return False
+            #
+            #     if str(term) == "mul(sign(u1, q1(u1)), sign(u1, q1(u1)))" or str(term) == 'mul(sign(q1(u1), u1), sign(u1, q1(u1)))'\
+            #             or str(term) == "mul(sign(u1, q1(u1)), sign(q1(u1), u1))" or str(term) == "mul(sign(q1(u1), u1), sign(q1(u1), u1))":
+            #         return False
+
+            # if any([f'k-{i}' in self.simplify_model(ind) for i in range(3, 10)]):
+            #     return False
             
-            if len(clusters['cross_terms']) > 0: # Evitar termos cruzados ajuda a manter o ponto de equilíbrio
-                return False
+            # if len(clusters['cross_terms']) > 0: # Evitar termos cruzados
+            #     return False
+
+            # if len(clusters['linear_input']) > 0: # proibir termos de entrada isolados
+            #     return False
+            #
+            # for idx in clusters['linear_input']:
+            #     if ind[idx].height > 1:
+            #         return False
+
+            # if len(clusters['linear_output']) > 1: # apenas um termo de saída
+            #     return False
+
+            # for idx in clusters['linear_output']: # apenas termos de saída k-1
+            #     if ind[idx].height > 1:
+            #         return False
                     
             return True
         except:
