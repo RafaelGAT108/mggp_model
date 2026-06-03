@@ -1,4 +1,5 @@
 import numpy as np
+import os
 from mggp import MGGP
 
 def test_training_reduces_error(siso_data):
@@ -119,3 +120,24 @@ def test_hysteresis_training_reduces_error(hysteresis_siso_data):
     final_best = model._hof[0].fitness.values[0]
 
     assert final_best <= initial_best or np.isfinite(final_best)
+
+
+def test_siso_training_run(hysteresis_siso_data):
+    u, y = hysteresis_siso_data
+
+    model = MGGP(
+        inputs=u,
+        outputs=y,
+        validation=(u, y),
+        generations=3,
+        populationSize=20,
+        nTerms=3,
+        maxHeight=3,
+        nDelays=1,
+        froe_mode=True
+    )
+
+    model.run()
+
+    assert os.path.exists("best_model.pkl")
+
