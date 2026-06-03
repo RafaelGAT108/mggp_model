@@ -1,6 +1,8 @@
 import numpy as np
 import os
 from mggp import MGGP
+from mggp.base import Individual
+
 
 def test_training_reduces_error(siso_data):
     u, y = siso_data
@@ -141,3 +143,24 @@ def test_siso_training_run(hysteresis_siso_data):
 
     assert os.path.exists("best_model.pkl")
 
+
+def test_load_model(hysteresis_siso_data):
+    u, y = hysteresis_siso_data
+
+    mggp = MGGP(
+        inputs=u,
+        outputs=y,
+        validation=(u, y),
+        generations=3,
+        populationSize=20,
+        nTerms=3,
+        maxHeight=3,
+        nDelays=1,
+        froe_mode=False
+    )
+
+    mggp.run()
+
+    loaded_model = mggp.load_model()
+
+    assert isinstance(loaded_model, Individual)
