@@ -22,6 +22,16 @@ def test_mutgpuniform_preserves_structure():
     assert len(new_ind) == len(ind)
 
 
+def test_mutgpuniform_preserves_structure_mimo():
+    el = Element(nInputs=2, nOutputs=2, nTerms=3, mode='MIMO')
+    ind = el.buildRandomModel()
+
+    mut = MutGPUniform(el)
+    new_ind, = mut.mutate(ind)
+
+    assert len(new_ind) == len(ind)
+
+
 
 def test_mutgpraplace_preserves_structure():
     el = Element(nInputs=1, nOutputs=1, nTerms=3)
