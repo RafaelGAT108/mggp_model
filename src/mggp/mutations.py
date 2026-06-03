@@ -21,24 +21,24 @@ class Mutation(ABC):
         return offspring,
 
     
-    def generate_terminal_only(self, pset: gp.PrimitiveSet, type_=None) -> gp.PrimitiveTree:
-            """Retorna uma árvore com apenas um nó terminal escolhido aleatoriamente"""
-            
-            terminal_index = random.randint(1, self._element._nVar)
-
-            if self._element._mode == "FIR":
-                terminal_name = f"u{terminal_index}"
-            
-            else:
-                
-                if terminal_index <= (self._element._nVar - self._element._nOutputs):
-                    terminal_name = f"u{terminal_index}"
-
-                else:
-                    terminal_name = f"y{terminal_index}"
-
-            terminal_node = pset.mapping[terminal_name]
-            return gp.PrimitiveTree([terminal_node])
+    # def generate_terminal_only(self, pset: gp.PrimitiveSet, type_=None) -> gp.PrimitiveTree:
+    #         """Retorna uma árvore com apenas um nó terminal escolhido aleatoriamente"""
+    #
+    #         terminal_index = random.randint(1, self._element._nVar)
+    #
+    #         if self._element._mode == "FIR":
+    #             terminal_name = f"u{terminal_index}"
+    #
+    #         else:
+    #
+    #             if terminal_index <= (self._element._nVar - self._element._nOutputs):
+    #                 terminal_name = f"u{terminal_index}"
+    #
+    #             else:
+    #                 terminal_name = f"y{terminal_index}"
+    #
+    #         terminal_node = pset.mapping[terminal_name]
+    #         return gp.PrimitiveTree([terminal_node])
         
     
     def genGrowLimitedNodes(self, pset: gp.PrimitiveSet, min_depth: int, max_depth: int, max_nodes: int, type_=None) -> list:
@@ -101,11 +101,10 @@ class MutGPReplace(Mutation):
 
     def mutate(self, ind: Individual) -> Individual:
         if self._element._mode in ['SISO', 'MISO']:
-            try:
-                idx = random.randint(0, len(ind) - 1)
-                ind[idx] = self._element._toolbox._program()
-            except:
-                pass
+
+            idx = random.randint(0, len(ind) - 1)
+            ind[idx] = self._element._toolbox._program()
+
 
         if self._element._mode == 'MIMO' or (self._element._mode == 'FIR' and self._element._nOutputs > 1):
             for o in range(len(ind)):
