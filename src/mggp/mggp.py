@@ -823,34 +823,34 @@ class MGGP:
         ind[:] = new_ind
 
 
-    def _froe_pruning_mimo(self, ind: Individual, P: np.ndarray, yd: np.ndarray) -> None:
-        """FROE para modelos MIMO (aplica para cada saída)"""
-        for o in range(len(ind)):
-            P_o = P[o]  
-            yd_o = yd[:, o] if yd.ndim > 1 else yd
-            
-            n_terms = P_o.shape[1] - 1
-            err_values = []
-            
-            for j in range(1, n_terms + 1):
-                w_j = P_o[:, j]
-                g_j = np.dot(w_j, yd_o) / np.dot(w_j, w_j)
-                err_j = (g_j**2 * np.sum(w_j**2)) / np.sum(yd_o**2)
-                err_values.append((j, err_j))
-            
-            err_values.sort(key=lambda x: x[1], reverse=True)
-            terms_to_keep = [0]
-            
-            for j, err in err_values:
-                if err >= self.pruning_tolerance:
-                    terms_to_keep.append(j)
-                else:
-                    if (j-1) < len(ind[o]):
-                        ind[o][j-1] = self.element._toolbox._program()
-            
-            new_output = []
-            for i in range(len(ind[o])):
-                if i in [x-1 for x in terms_to_keep if x > 0]:
-                    new_output.append(ind[o][i])
-            
-            ind[o][:] = new_output
+    # def _froe_pruning_mimo(self, ind: Individual, P: np.ndarray, yd: np.ndarray) -> None:
+    #     """FROE para modelos MIMO (aplica para cada saída)"""
+    #     for o in range(len(ind)):
+    #         P_o = P[o]
+    #         yd_o = yd[:, o] if yd.ndim > 1 else yd
+    #
+    #         n_terms = P_o.shape[1] - 1
+    #         err_values = []
+    #
+    #         for j in range(1, n_terms + 1):
+    #             w_j = P_o[:, j]
+    #             g_j = np.dot(w_j, yd_o) / np.dot(w_j, w_j)
+    #             err_j = (g_j**2 * np.sum(w_j**2)) / np.sum(yd_o**2)
+    #             err_values.append((j, err_j))
+    #
+    #         err_values.sort(key=lambda x: x[1], reverse=True)
+    #         terms_to_keep = [0]
+    #
+    #         for j, err in err_values:
+    #             if err >= self.pruning_tolerance:
+    #                 terms_to_keep.append(j)
+    #             else:
+    #                 if (j-1) < len(ind[o]):
+    #                     ind[o][j-1] = self.element._toolbox._program()
+    #
+    #         new_output = []
+    #         for i in range(len(ind[o])):
+    #             if i in [x-1 for x in terms_to_keep if x > 0]:
+    #                 new_output.append(ind[o][i])
+    #
+    #         ind[o][:] = new_output
