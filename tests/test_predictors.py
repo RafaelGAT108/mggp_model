@@ -78,16 +78,31 @@ def test_miso_freerun_stability(miso_data):
     assert not np.isinf(yp).any()
 
 
-# def test_mimo_freerun_stability(mimo_data):
-#     u, y = mimo_data
-#
-#     el = Element(nInputs=2, nOutputs=2, nTerms=2, nDelays=2, mode='MIMO')
-#     model = el.buildRandomModel()
-#     el.compileModel(model)
-#
-#     model.theta = np.ones(len(model)+1)
-#
-#     yp, yd = model.predict("FreeRun", y, u)
-#
-#     assert not np.isnan(yp).any()
-#     assert not np.isinf(yp).any()
+def test_mimo_freerun_stability(mimo_data):
+    u, y = mimo_data
+
+    el = Element(nInputs=2, nOutputs=2, nTerms=2, nDelays=2, mode='MIMO')
+    model = el.buildRandomModel()
+    el.compileModel(model)
+
+    model.theta = np.ones([2, len(model)+1])
+
+    yp, yd = model.predict("FreeRun", y, u)
+
+    assert not np.isnan(yp).any()
+    assert not np.isinf(yp).any()
+
+
+def test_fir_freerun_stability(mimo_data):
+    u, y = mimo_data
+
+    el = Element(nInputs=2, nOutputs=2, nTerms=2, nDelays=2, mode='FIR')
+    model = el.buildRandomModel()
+    el.compileModel(model)
+
+    model.theta = np.ones([2, len(model)+1])
+
+    yp, yd = model.predict("FreeRun", y, u)
+
+    assert not np.isnan(yp).any()
+    assert not np.isinf(yp).any()

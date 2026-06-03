@@ -143,7 +143,7 @@ def mimo_FreeRun(ind: "Individual", y_true: np.ndarray, u: np.ndarray) -> tuple[
     lag = ind.lagMax
     n_samples = u.shape[0]
     n_outputs = y_true.shape[1]
-
+    n_inputs = u.shape[1]
     y = y_true[:lag, :].copy()
 
     y_pred = []
@@ -151,7 +151,8 @@ def mimo_FreeRun(ind: "Individual", y_true: np.ndarray, u: np.ndarray) -> tuple[
     for k in range(lag, n_samples):
 
         y_windows = [y[k - lag:k, i:i+1] for i in range(n_outputs)]
-        u_windows = [u[k - lag:k + 1, j:j+1] for j in range(u.shape[1])]
+        # u_windows = [u[k - lag:k + 1, j:j+1] for j in range(n_inputs)]
+        u_windows = [u[k - lag+1:k+1, i:i+1] for i in range(n_inputs)]
 
         listV = y_windows + u_windows
 
@@ -164,9 +165,13 @@ def mimo_FreeRun(ind: "Individual", y_true: np.ndarray, u: np.ndarray) -> tuple[
             for j in range(len(ind[idx_output])):
 
                 func = ind.funcs[idx_output][j]
-                out = func(*listV)
-
-                regressors.append(float(out[-1]))
+                try:
+                    out = func(*listV)
+                except AttributeError:
+                    out = np.asarray([0])
+                    print("allert!")
+                out2 = out.reshape(-1)
+                regressors.append(out2[-1])
 
             theta_k = ind.theta[idx_output]
             yk = np.dot(regressors, theta_k)
@@ -220,7 +225,9 @@ def mimo_FIR_FreeRun(ind: "Individual", y_true: np.ndarray, u: np.ndarray) -> tu
 
                 genetic_programming_term = ind.funcs[idx_output][idx_equation_tree]
                 out = genetic_programming_term(*listV)
-                regressors.append(float(out[-1])) 
+
+                out = out.reshape(-1)
+                regressors.append(out[-1])
             
             y_pred[step, idx_output] = np.dot(regressors, ind.theta[idx_output])
 
