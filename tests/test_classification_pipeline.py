@@ -14,8 +14,38 @@ def test_classification_runs(classification_data):
         validation=(X_test, y_test),
         problem_type="classification",
         classification_metric="accuracy",
-            evaluationType='INSTANT',
-            evaluationTypeTest='INSTANT',
+        evaluationType='INSTANT',
+        evaluationTypeTest='INSTANT',
+        nDelays=1,
+        k=1,
+        generations=2,
+        populationSize=20,
+        nTerms=10,
+        maxHeight=2,
+        mutationRate=0.2,
+        crossoverRate=0.9,
+        filename=model_file,
+        mode="FIR",
+    )
+
+    mggp.run()
+
+    assert os.path.exists(model_file)
+
+def test_classification_logloss_runs(classification_data):
+
+    X_train, X_test, y_train, y_test = classification_data
+
+    model_file = "test_classification.pkl"
+
+    mggp = MGGP(
+        inputs=X_train,
+        outputs=y_train,
+        validation=(X_test, y_test),
+        problem_type="classification",
+        classification_metric='log_loss',
+        evaluationType='INSTANT',
+        evaluationTypeTest='INSTANT',
         nDelays=1,
         k=1,
         generations=2,
