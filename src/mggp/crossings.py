@@ -23,6 +23,17 @@ class Crossing(ABC):
 
 
 class CrossLowOnePoint(Crossing):
+    """
+        Low-level one-point crossover.
+
+        Performs crossover inside a single GP gene (tree). One corresponding gene
+        is randomly selected from both parents, and DEAP's gp.cxOnePoint is applied
+        to exchange subtrees between these two genes.
+
+        Therefore, this operator modifies the internal structure of one gene while
+        keeping the remaining genes unchanged.
+    """
+    
     def __init__(self, element):
         super().__init__(element)
 
@@ -43,6 +54,17 @@ class CrossLowOnePoint(Crossing):
 
 
 class CrossLowUniform(Crossing):
+    """
+        Low-level uniform crossover.
+
+        Performs crossover inside multiple GP genes (trees). Each pair of
+        corresponding genes has an independent probability (`indpb`) of undergoing
+        DEAP's gp.cxOnePoint crossover.
+
+        Consequently, several genes may have their internal tree structures
+        recombined during a single crossover operation.
+    """
+
     def __init__(self, element):
         super().__init__(element)
 
@@ -66,6 +88,16 @@ class CrossLowUniform(Crossing):
 
 
 class CrossHighOnePoint(Crossing):
+    """
+        High-level one-point crossover.
+
+        Performs crossover at the MGGP gene-list level instead of modifying the
+        internal structure of GP trees. A crossover position is selected and the
+        complete genes after that position are exchanged between the parents.
+
+        Each gene is treated as an indivisible unit: its GP tree is transferred
+        without modification.
+    """
     def __init__(self, element):
         super().__init__(element)
 
@@ -91,6 +123,17 @@ class CrossHighOnePoint(Crossing):
 
 
 class CrossHighUniform(Crossing):
+    """
+        High-level uniform crossover.
+
+        Performs crossover at the MGGP gene-list level. Each pair of corresponding
+        genes has an independent probability (`indpb`) of being exchanged between
+        the two parents.
+
+        The internal GP tree of each gene remains unchanged; complete genes are
+        moved between individuals.
+    """
+
     def __init__(self, element):
         super().__init__(element)
 
