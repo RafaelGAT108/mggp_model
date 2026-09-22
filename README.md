@@ -48,7 +48,7 @@ For classification, labels must be converted to one-hot encoding before training
 
 ---
 
-# Tutorial 1 — Symbolic Regression For a Synthetic Dynamic System
+# Tutorial 1 — Symbolic Regression For a Dynamic System
 
 This example generates a synthetic nonlinear SISO dynamic system and uses MGGP to identify an interpretable equation. The true system is:
 
