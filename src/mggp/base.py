@@ -1,3 +1,5 @@
+from __future__ import annotations
+from numpy.typing import NDArray
 import pickle
 from functools import partial
 from abc import abstractmethod
@@ -116,15 +118,15 @@ class Individual(list):
         self.logistic_model = None 
 
     @abstractmethod
-    def makeRegressors(self, y: np.ndarray, u: np.ndarray):
+    def makeRegressors(self, y: NDArray, u: NDArray):
         pass
 
     @abstractmethod
-    def leastSquares(self, y: np.ndarray, u: np.ndarray):
+    def leastSquares(self, y: NDArray, u: NDArray):
         pass
 
 
-    def constrained_least_squares(self, y: np.ndarray, p: np.ndarray, constraints=None) -> np.ndarray:
+    def constrained_least_squares(self, y: NDArray, p: NDArray, constraints=None) -> NDArray:
 
         yd = y[self.lagMax:]
         
@@ -164,7 +166,7 @@ class Individual(list):
         return self.theta
     
 
-    def identify_term_clusters(self, y: np.ndarray, u: np.ndarray) -> dict:
+    def identify_term_clusters(self, y: NDArray, u: NDArray) -> dict:
         """Identify regressor term clusters used by the hysteretic constraints (Property 1).
 
         The paper groups parameters into clusters and enforces:
@@ -304,7 +306,7 @@ class Individual(list):
         return not any(op in tree_str for op in non_linear_ops)
     
 
-    def hysteretic_constrained_ls(self, y: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def hysteretic_constrained_ls(self, y: NDArray, u: NDArray) -> NDArray:
         """Constrained LS enforcing the hysteretic equilibrium conditions (Property 1).
 
         Enforced constraints (paper Section 3):
@@ -368,17 +370,17 @@ class Individual(list):
         return self.constrained_least_squares(y, p, constraints)
 
 
-    def predict_proba(self, mode: str ="INSTANT", *args: tuple) -> tuple[np.ndarray, np.ndarray]:
+    def predict_proba(self, mode: str ="INSTANT", *args: tuple) -> tuple[NDArray, NDArray]:
         """Predição de probabilidades para classificação"""
 
-        def one_hot_argmax(x: np.ndarray) -> np.ndarray:
+        def one_hot_argmax(x: NDArray) -> NDArray:
 
             result = np.zeros_like(x)
             result[np.argmax(x)] = 1
             
             return result
     
-        def softmax(x: np.ndarray) -> np.ndarray:
+        def softmax(x: NDArray) -> NDArray:
             """Calcula softmax para cada linha do vetor de entrada x."""
 
             e_x = np.exp(x - np.max(x))
@@ -406,7 +408,7 @@ class Individual(list):
             raise Exception("Logistic regression model not trained!")
 
 
-    def predict_classes(self, mode: str ="INSTANT", *args: tuple) -> tuple[np.ndarray, np.ndarray]:
+    def predict_classes(self, mode: str ="INSTANT", *args: tuple) -> tuple[NDArray, NDArray]:
         """Predição de classes"""
         
         # probabilities, y_true = self.predict_proba(mode, *args)
@@ -417,7 +419,7 @@ class Individual(list):
         return predicted_classes, y_true
 
 
-    def score_classification(self, yd: np.ndarray, yp: np.ndarray, mode: str ="accuracy") -> float:
+    def score_classification(self, yd: NDArray, yp: NDArray, mode: str ="accuracy") -> float:
         """Métricas de avaliação para classificação"""
         
         if mode == "accuracy":
@@ -435,7 +437,7 @@ class Individual(list):
             raise ValueError("Choose a valid metric: accuracy, log_loss, f1_macro")
 
     
-    def predict(self, mode: str = "OSA", *args: tuple) -> tuple[np.ndarray, np.ndarray]:
+    def predict(self, mode: str = "OSA", *args: tuple) -> tuple[NDArray, NDArray]:
         if mode == "OSA":
             return mimo_OSA(self, *args)
         
@@ -449,7 +451,7 @@ class Individual(list):
             raise Exception("Choose a mode between: OSA, FreeRun, MShooting")
 
     
-    def _mape(self, yd: np.ndarray, yp: np.ndarray) -> float:
+    def _mape(self, yd: NDArray, yp: NDArray) -> float:
         """MAPE Calculate in the array form."""
         diff = np.abs(yd - yp)
         denominator = np.abs(np.max(yd, axis=0) - np.min(yd, axis=0))
@@ -459,13 +461,13 @@ class Individual(list):
         return np.nanmean(mape_per_output) 
 
     
-    def _compute_metric_per_output(self, yd: np.ndarray, yp: np.ndarray, metric_func: callable) -> float:
+    def _compute_metric_per_output(self, yd: NDArray, yp: NDArray, metric_func: callable) -> float:
         """Apply a metric (MSE, RMSE) in each output and return the mean"""
         return np.mean([metric_func(yd[:, i], yp[:, i]) for i in range(yd.shape[1])])
         # return max([metric_func(yd[:, i], yp[:, i]) for i in range(yd.shape[1])])
 
     
-    def score(self, yd: np.ndarray, yp: np.ndarray, mode: str ="MSE"):
+    def score(self, yd: NDArray, yp: NDArray, mode: str ="MSE"):
         """Calculate the error metric choosed (MSE, MAPE, RMSE)."""
         if mode not in ["MSE", "NMSE", "MAPE", "RMSE"]:
             raise ValueError("Choose a valid metric: MSE, NMSE, MAPE or RMSE")
@@ -873,7 +875,7 @@ class IndividualSISO(Individual):
     def __init__(self, data: str = []):
         super().__init__(data)
     
-    def predict(self, mode: str = "OSA", *args)  -> tuple[np.ndarray, np.ndarray]:
+    def predict(self, mode: str = "OSA", *args)  -> tuple[NDArray, NDArray]:
         if mode == "OSA":
             return miso_OSA(self, *args)
         
@@ -887,7 +889,7 @@ class IndividualSISO(Individual):
             raise Exception("Choose a mode between: OSA, FreeRun, MShooting")
     
 
-    def makeRegressors(self, y: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def makeRegressors(self, y: NDArray, u: NDArray) -> NDArray:
 
         if len(y.shape) == 1:
             y = y.reshape(-1, 1)
@@ -921,7 +923,7 @@ class IndividualSISO(Individual):
         return p
     
     
-    def leastSquares(self, y: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def leastSquares(self, y: NDArray, u: NDArray) -> NDArray:
         p = self.makeRegressors(y, u)
 
         yd = y[self.lagMax:]
@@ -960,7 +962,7 @@ class IndividualMISO(Individual):
     def __init__(self, data: str = []):
         super().__init__(data)
 
-    def predict(self, mode: str = "OSA", *args: tuple) -> tuple[np.ndarray, np.ndarray]:
+    def predict(self, mode: str = "OSA", *args: tuple) -> tuple[NDArray, NDArray]:
         if mode == "OSA":
             return miso_OSA(self, *args)
         
@@ -1011,7 +1013,7 @@ class IndividualMISO(Individual):
 
 
 
-    def makeRegressors(self, y: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def makeRegressors(self, y: NDArray, u: NDArray) -> NDArray:
         if len(y.shape) == 1:
             y = y.reshape(-1, 1)
         if len(u.shape) == 1:
@@ -1052,7 +1054,7 @@ class IndividualMISO(Individual):
         return p
 
 
-    def leastSquares(self, y: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def leastSquares(self, y: NDArray, u: NDArray) -> NDArray:
         '''
         The leastSquare(y,u) function implements the Least Squares method
         for parameter estimation.
@@ -1093,7 +1095,7 @@ class IndividualMIMO(Individual):
         super().__init__(data)
 
     
-    def makeRegressors(self, y: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def makeRegressors(self, y: NDArray, u: NDArray) -> NDArray:
         if len(y.shape) == 1:
             y = y.reshape(-1, 1)
         if len(u.shape) == 1:
@@ -1123,7 +1125,7 @@ class IndividualMIMO(Individual):
         return P
 
 
-    def leastSquares(self, y: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def leastSquares(self, y: NDArray, u: NDArray) -> NDArray:
         """
         LS para MIMO.
         Em classificação, y_true deve alinhar com P (N - lagMax).
@@ -1211,7 +1213,7 @@ class IndividualFIR(Individual):
     #         self.theta = self.theta.reshape(-1, 1)
     #     return self.theta
 
-    def predict(self, mode: str ="OSA", *args: tuple) -> tuple[np.ndarray, np.ndarray]:
+    def predict(self, mode: str ="OSA", *args: tuple) -> tuple[NDArray, NDArray]:
         if mode == "OSA":
             return miso_OSA(self, *args)
         
@@ -1228,7 +1230,7 @@ class IndividualFIR(Individual):
             raise Exception("Choose a mode between: OSA, INSTANT, FreeRun, MShooting")
 
 
-    def makeRegressors(self, y: np.ndarray, u: np.ndarray, align: str = "OSA") -> np.ndarray:
+    def makeRegressors(self, y: NDArray, u: NDArray, align: str = "OSA") -> NDArray:
         if len(u.shape) == 1:
             u = u.reshape(-1, 1)
 
@@ -1256,7 +1258,7 @@ class IndividualFIR(Individual):
         return p
 
 
-    def leastSquares(self, y: np.ndarray, u: np.ndarray, align: str ="OSA") -> np.ndarray:
+    def leastSquares(self, y: NDArray, u: NDArray, align: str ="OSA") -> NDArray:
         """
         FIR LS com alinhamento consistente com a predição.
         """
@@ -1322,7 +1324,7 @@ class IndividualFIRMIMO(Individual):
     #         raise Exception("Choose a mode between: OSA, FreeRun, MShooting")
 
 
-    def makeRegressors(self, y: np.ndarray, u: np.ndarray) -> List[np.ndarray]:
+    def makeRegressors(self, y: NDArray, u: NDArray) -> List[NDArray]:
         if len(u.shape) == 1:
             u = u.reshape(-1, 1)
 
@@ -1347,7 +1349,7 @@ class IndividualFIRMIMO(Individual):
         return P
 
 
-    def leastSquares(self, y: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def leastSquares(self, y: NDArray, u: NDArray) -> NDArray:
         P = self.makeRegressors(y, u)
 
         y_slice = y[self.lagMax:, :]
@@ -1356,7 +1358,7 @@ class IndividualFIRMIMO(Individual):
         return self.theta
 
 
-    def predict(self, mode: str ="OSA", *args: tuple) -> tuple[np.ndarray, np.ndarray]:
+    def predict(self, mode: str ="OSA", *args: tuple) -> tuple[NDArray, NDArray]:
         if mode == "OSA":
             return mimo_OSA(self, *args)
         if mode == "INSTANT":
