@@ -1,3 +1,6 @@
+from __future__ import annotations
+from numpy.typing import NDArray
+
 # import multiprocessing
 from typing import Literal, Tuple, Optional, List
 import numpy as np
@@ -18,10 +21,10 @@ warnings.filterwarnings("ignore")
 class MGGP:
 
     def __init__(self,
-                 inputs: np.ndarray = np.array([[0, 0]]),
-                 outputs: np.ndarray = np.array([[0, 0]]),
+                 inputs: NDArray = np.array([[0, 0]]),
+                 outputs: NDArray = np.array([[0, 0]]),
                  generations: int = 100,
-                 validation: Optional[Tuple[np.ndarray, np.ndarray]] = (None, None),
+                 validation: Optional[Tuple[NDArray, NDArray]] = (None, None),
                  evaluationMode: Literal['RMSE', 'MSE', 'MAPE'] = 'RMSE',
                  evaluationType: Literal['OSA', 'MShooting', 'FreeRun', 'INSTANT'] = 'MShooting',
                  evaluationTypeTest: Literal['OSA', 'MShooting', 'FreeRun', 'INSTANT'] = 'FreeRun',
@@ -49,7 +52,7 @@ class MGGP:
             inputs (ndarray): The inputs in the system. Each column represent an input.
             outputs (ndarray): The outputs in the system. Each column represent an output.
             generations (int): Number of generations to train the model.
-            validation (Optional[Tuple[np.ndarray, np.ndarray]]): Inputs and outputs to validate the model. Must be a tuple (inputs, outputs).
+            validation (Optional[Tuple[NDArray, NDArray]]): Inputs and outputs to validate the model. Must be a tuple (inputs, outputs).
             evaluationMode (Literal['RMSE', 'MSE', 'MAPE']):  Mode to evaluate the models and ranking the better.
             evaluationType (Literal['OSA', 'MShooting', 'FreeRun']): One-Step-Ahead, Multiple-Shooting and Free-Run predictors.
             evaluationTypeTest (Literal['OSA', 'MShooting', 'FreeRun']): One-Step-Ahead, Multiple-Shooting and Free-Run predictors for Test.
@@ -820,7 +823,7 @@ class MGGP:
             self._froe_pruning_mimo(ind, P, yd)
 
 
-    def _froe_pruning_miso(self, ind: Individual, P: np.ndarray, yd: np.ndarray) -> None:
+    def _froe_pruning_miso(self, ind: Individual, P: NDArray, yd: NDArray) -> None:
         """FROE para modelos MISO"""
         n_terms = P.shape[1] - 1 
         
@@ -849,7 +852,7 @@ class MGGP:
         ind[:] = new_ind
 
 
-    # def _froe_pruning_mimo(self, ind: Individual, P: np.ndarray, yd: np.ndarray) -> None:
+    # def _froe_pruning_mimo(self, ind: Individual, P: NDArray, yd: NDArray) -> None:
     #     """FROE para modelos MIMO (aplica para cada saída)"""
     #     for o in range(len(ind)):
     #         P_o = P[o]
