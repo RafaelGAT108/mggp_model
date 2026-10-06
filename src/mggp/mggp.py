@@ -88,6 +88,7 @@ class MGGP:
         self.new_evaluation = new_evaluation
         self.fronts = []
 
+        os.makedirs('models_saved', exist_ok=True)
         if self.new_evaluation is not None:
             self.weights = (-1, -1)
 
