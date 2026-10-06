@@ -141,7 +141,7 @@ def test_siso_training_run(hysteresis_siso_data):
 
     model.run()
 
-    assert os.path.exists("best_model.pkl")
+    assert os.path.exists(f"models_saved/best_model_0.pkl")
 
 
 def test_load_model(hysteresis_siso_data):

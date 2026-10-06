@@ -30,7 +30,7 @@ def test_classification_runs(classification_data):
 
     mggp.run()
 
-    assert os.path.exists(model_file)
+    assert os.path.exists(f"models_saved/{model_file}_0.pkl")
 
 def test_classification_logloss_runs(classification_data):
 
@@ -60,7 +60,7 @@ def test_classification_logloss_runs(classification_data):
 
     mggp.run()
 
-    assert os.path.exists(model_file)
+    assert os.path.exists(f"models_saved/{model_file}_0.pkl")
 
 
 # def test_classification_predict_shape(classification_data):

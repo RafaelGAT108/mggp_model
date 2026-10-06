@@ -12,10 +12,11 @@ import pickle
 from sklearn.metrics import mean_absolute_percentage_error, mean_absolute_error, r2_score
 
 def sign(X1, X2):
-    return np.sign(X1 - X2)
+    return np.sign(X1 - X2)[0]
 
 def sub(X1, X2):
-    return X1 - X2
+    res = X1 - X2
+    return res[0]
 
 def mcase_21(u, y_init):
 
@@ -48,7 +49,85 @@ def mcase_21(u, y_init):
 
     return y_pred[3:]
 
-import numpy as np
+
+def mcase30_free_run_terms(u, y_init):
+    u = np.asarray(u).reshape(-1)
+    y_init = np.asarray(y_init).reshape(-1)
+
+    N = len(u)
+
+    y_pred = np.zeros(N)
+
+    n_terms = 12
+    terms = np.zeros((n_terms, N))
+
+    y_pred[:2] = y_init[:2]
+
+    for k in range(2, N):
+
+        du = u[k] - u[k-1]
+        s  = np.sign(du)
+        s_inv = np.sign(u[k-1] - u[k])
+
+        # --- termos simplificados ---
+        terms[0, k]  = -1.34210e+00 * s
+        terms[1, k]  =  3.03195e-02 * s * y_pred[k-1] * s
+        terms[2, k]  = -1.06222e+00 * y_pred[k-1] * s * du
+        terms[3, k]  =  1.00000e+00 * y_pred[k-1]
+        terms[4, k]  = -3.35254e-03 * du * y_pred[k-1] * y_pred[k-1]
+        terms[5, k]  = -5.63146e-06 * y_pred[k-2] * u[k-1] * y_pred[k-1] * y_pred[k-1] * du
+        terms[6, k]  =  9.48303e+00 * (u[k-1] - u[k]) * s
+        terms[7, k]  =  7.81407e+00 * du * u[k-1] * s
+        terms[8, k]  = -2.51488e-01 * y_pred[k-1] * du
+        terms[9, k]  = -1.02552e-03 * s * u[k-1] * y_pred[k-1] * u[k]
+        terms[10, k] =  4.96143e-01 * u[k-1] * u[k-1] * du
+        terms[11, k] =  1.26599e-02 * y_pred[k-1] * u[k-1] * s
+
+        # saída
+        y_pred[k] = np.sum(terms[:, k])
+
+    return y_pred[2:], terms[:, 2:]
+
+
+def mcase_butterfly_free_run_terms(u, y_init):
+    u = np.asarray(u).reshape(-1)
+    y_init = np.asarray(y_init).reshape(-1)
+
+    N = len(u)
+
+    y_pred = np.zeros(N)
+
+    n_terms = 14
+    terms = np.zeros((n_terms, N))
+
+    # Necessário devido aos atrasos y[k-2] e y[k-3]
+    y_pred[:3] = y_init[:3]
+
+    for k in range(3, N):
+
+        du = u[k] - u[k-1]
+
+        s = np.sign(du)
+        s_inv = np.sign(u[k-1] - u[k])
+
+        terms[0, k]  = 9.21945e-07 * u[k] * u[k-1] * s
+        terms[1, k]  =  5.01185e-01 * y_pred[k-3]
+        terms[2, k]  = -1.87658e-04 * s_inv * du * u[k]**2
+        terms[3, k]  = -4.77906e-03 * u[k-3]
+        terms[4, k]  = -8.31818e-01 * u[k]
+        terms[5, k]  =  4.98815e-01 * y_pred[k-2]
+        terms[6, k]  =  1.61398e-01 * s * s
+        terms[7, k]  = -8.56080e-01 * u[k-2]
+        terms[8, k]  =  2.84447e-07 * u[k-1] * u[k]**2 * du
+        terms[9, k]  = -1.83973e-02 * s
+        terms[10, k] = -2.43298e-02 * (u[k-1] - u[k])**2
+        terms[11, k] = -2.74938e+00 * s * du
+        terms[12, k] =  1.69268e+00 * u[k-1]
+        terms[13, k] = -7.89230e-02 * (u[k-1] - u[k]) * u[k-1]
+
+        y_pred[k] = np.sum(terms[:, k])
+
+    return y_pred[3:], terms[:, 3:]
 
 def mcase24_free_run_terms(u, y_init):
     u = np.asarray(u).reshape(-1)
@@ -93,7 +172,37 @@ def mcase24_free_run_terms(u, y_init):
 
     return y_pred[1:], terms[:, 1:]
 
-    
+
+def comparecase_free_run(u, y_init):
+    u = np.asarray(u)
+    N = len(u)
+
+    y_pred = np.zeros(N)
+    terms = np.zeros((6, N))
+
+    y_pred[:3] = y_init[:3].reshape(-1)
+
+    theta = [1,
+            0.77,
+            1.44e-2,
+            -9.6e-3,
+            3.15e-4,
+            -2.46e-4
+        ]
+    # phi1 = sub
+    # phi2 = sign
+
+    for k in range(3, N):
+        terms[0, k] = theta[0] * y_pred[k-1]
+        terms[1, k] = theta[1] * sub(u[k-1], u[k-2])
+        terms[2, k] = theta[2] * u[k-2][0] * sign(u[k-2], u[k-3]) * sub(u[k-2], u[k-3])
+        terms[3, k] = theta[3] * y_pred[k-1] * sign(u[k-2], u[k-3]) * sub(u[k-2], u[k-3])
+        terms[4, k] = theta[4] * u[k - 2][0] * u[k - 2][0] * sub(u[k-2], u[k-3])
+        terms[5, k] = theta[5] * u[k - 2][0] * y_pred[k-1] * sub(u[k-2], u[k-3])
+
+        y_pred[k] = np.sum(terms[:, k])
+
+    return y_pred[3:], terms[:, 3:]
 
 
 def mcase_free_run_terms(u, y_init):
@@ -377,9 +486,10 @@ def mggp_predict(X_val, y_val,
     loaded_model = MGGP(inputs=X_val,
                     outputs=y_val,
                     filename=save_model,
-                    mode="MIMO",
+                    mode="NARX",
                     kwargs={'operators': ['mul', 'subtraction', 'sign']}).load_model()
 
+    loaded_model.theta = loaded_model.hysteretic_constrained_ls(y_val, X_val)
     args = (y_val, X_val)
     mggp_yp, mggp_yd = loaded_model.predict(evaluationTypeTest, *args)
 
@@ -554,7 +664,7 @@ def load_data(file_path, folder, filter=None, tire=None):
     df = pd.read_csv(file_path)
     if 'Initial_Time' in df.columns and 'Final_Time' in df.columns:
         df.drop(columns=['Initial_Time', 'Final_Time'], inplace=True)
-    df = remove_window_with_noise(df, folder)
+    # df = remove_window_with_noise(df, folder)
     
     if 'Ax' in df.columns:
         df.drop(columns=['Ax', 'Ay'], inplace=True)
