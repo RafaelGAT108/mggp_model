@@ -7,7 +7,9 @@ import numpy as np
 from .base import Element, Individual
 import time
 import warnings
+import os
 from deap import tools
+from deap.tools import sortNondominated
 from copy import deepcopy
 from .mutations import *
 from .crossings import *
@@ -37,7 +39,7 @@ class MGGP:
                  mutationRate: float = 0.1,
                  populationSize: int = 100,
                  elitePercentage: int = 10,
-                 filename: str = "best_model.pkl",
+                 filename: str = "best_model",
                  mode: Literal['NARX', 'FIR'] = 'NARX',
                  problem_type: Literal['regression', 'classification'] = 'regression',
                  classification_metric: Literal['accuracy', 'log_loss', 'f1_macro'] = 'accuracy',
@@ -46,6 +48,7 @@ class MGGP:
                  pruning_tolerance: float = 1e-5,      
                  phi_functions: List[str] = ['subtraction', 'sign'],  
                  operators: List[str] = ['mul'],   
+                 new_evaluation: callable = None,
                  **kwargs):
         """
         Args:
@@ -82,7 +85,15 @@ class MGGP:
         self.elitePercentage = elitePercentage
         self.k = k
         self.nTerms = nTerms
-        self.weights = weights
+        self.new_evaluation = new_evaluation
+        self.fronts = []
+
+        if self.new_evaluation is not None:
+            self.weights = (-1, -1)
+
+        else:
+            self.weights = weights
+
         self.nDelays = nDelays
         self.single_delay_only = True if isinstance(self.nDelays, int) and self.nDelays == 1 else False
 
@@ -245,7 +256,11 @@ class MGGP:
 
         for ind in self._pop:
             if not ind.fitness.valid:
-                ind.fitness.values = (np.inf,)
+                if self.new_evaluation is not None:
+                    
+                    ind.fitness.values = (np.inf, np.inf)
+                else:
+                    ind.fitness.values = (np.inf,)
 
         record = {'fitness': self._stats.compile(self._pop)}
         self._logbook.record(gen=1, evals=len(invalid_ind), **record)
@@ -314,27 +329,36 @@ class MGGP:
         self._pop = self._hof.items + offspring
         self._hof.update(self._pop)
 
-        model = deepcopy(self._hof[0])
-        self.element.compileModel(model)
+        if self.new_evaluation is not None:
+            self.fronts = sortNondominated(self._pop, k=len(self._pop))
+            models = self.fronts[0]
 
-        if self.mode == "FIR":
-            align = self._fir_align(self.evaluationType)
-            theta_value = self._call_with_align_if_supported(model.leastSquares, self.outputs, self.inputs, align=align)
         else:
-            if 'sign' in self.operators: 
-                theta_value = model.hysteretic_constrained_ls(self.outputs, self.inputs)
-            
-            else:
-                theta_value = model.leastSquares(self.outputs, self.inputs)
+            models = [deepcopy(self._hof[0])]
 
-        model.theta = list(theta_value)
-        
-        self.save_model(model)
+        for i, model in enumerate(models):
+            self.element.compileModel(model)
+
+            if self.mode == "FIR":
+                align = self._fir_align(self.evaluationType)
+                theta_value = self._call_with_align_if_supported(model.leastSquares, self.outputs, self.inputs, align=align)
+            else:
+                if 'sign' in self.operators: 
+                    theta_value = model.hysteretic_constrained_ls(self.outputs, self.inputs)
+                
+                else:
+                    theta_value = model.leastSquares(self.outputs, self.inputs)
+
+            model.theta = list(theta_value)
+            
+            os.makedirs("models_saved", exist_ok=True)
+            self.save_model(model, filename=f"models_saved/{self.filename}_{i}.pkl")
+            
         record = {'fitness': self._stats.compile(self._pop)}
 
         self._logbook.record(gen=gen_number+1, evals=len(invalid_ind), **record)
 
-
+    
     def buildArgumentsDict(self) -> dict:
         arguments = dict()
         
@@ -371,7 +395,11 @@ class MGGP:
                     ind.theta = theta_value
 
                     if not self._check_hysteretic_constraints(ind):
-                        return (np.inf,)  
+                        if self.new_evaluation is not None:
+                            return (np.inf, np.inf)
+                        
+                        else:
+                            return (np.inf,)
         
                 else:
                     if self.mode == "FIR":
@@ -389,6 +417,11 @@ class MGGP:
                 error = ind.score(yd, yp, self.evaluationMode)
                 # complexity = sum([len(subtree) for tree in ind for subtree in tree])/1000
                 # fitness = error + complexity
+                if self.new_evaluation is not None:
+
+                    new_error = self.new_evaluation(ind)
+                    return (error, new_error)
+                
                 return error,
             
             elif self.problem_type == 'classification':
@@ -421,7 +454,11 @@ class MGGP:
                 raise ValueError("problem_type must be 'regression' or 'classification'")
 
         except (np.linalg.LinAlgError, ValueError, IndexError) as e:
-            return (np.inf,)
+            if self.new_evaluation is not None:
+                return (np.inf, np.inf)
+            
+            else:
+                return (np.inf,)
 
 
     def run(self, seed: List = []) -> None:
@@ -476,32 +513,40 @@ class MGGP:
             
         #    err_stop_before = err_stop_current
 
+        if self.new_evaluation is not None:
+            self.fronts = sortNondominated(self._pop, k=len(self._pop))
+            models = self.fronts[0]
 
-        model = self._hof[0]
-        self.element.compileModel(model)
-
-        if self.mode == "FIR":
-            align = self._fir_align(self.evaluationType)
-            theta_value = self._call_with_align_if_supported(model.leastSquares, self.outputs, self.inputs)
-        
         else:
-            if self.problem_type == "classification":
-                model.logistic_model = True
-            
-            if 'sign' in self.operators:
-                theta_value = model.hysteretic_constrained_ls(self.outputs, self.inputs)
+            models = [self._hof[0]]
+
+        for i, model in enumerate(models):
+            self.element.compileModel(model)
+
+            if self.mode == "FIR":
+                align = self._fir_align(self.evaluationType)
+                theta_value = self._call_with_align_if_supported(model.leastSquares, self.outputs, self.inputs, align=align)
             else:
-                theta_value = model.leastSquares(self.outputs, self.inputs)
+                
+                if self.problem_type == "classification":
+                    model.logistic_model = True
 
-        model.theta = list(theta_value)
-        
-        self.save_model(model)
+                if 'sign' in self.operators: 
+                    theta_value = model.hysteretic_constrained_ls(self.outputs, self.inputs)
+                
+                else:
+                    theta_value = model.leastSquares(self.outputs, self.inputs)
 
-        print(self.simplify_model(model))
-        self.validation_all(model=model)
+            model.theta = list(theta_value)
+            
+            os.makedirs("models_saved", exist_ok=True)
+            self.save_model(model, filename=f"models_saved/{self.filename}_{i}.pkl")
+            print(self.simplify_model(model))
+            self.validation_all(model=model)
 
         end = time.time()
         print(f"Executed in: {round(end - init, 3)} seg")
+        return models
 
 
     def validation_all(self, model):
@@ -627,7 +672,7 @@ class MGGP:
         return model
     
 
-    def save_model(self, model) -> None:
+    def save_model(self, model, filename) -> None:
         """
         Save the best model to a file for later use as seed
         Args:
@@ -648,7 +693,7 @@ class MGGP:
             'operators': self.operators 
         }
         
-        with open(self.filename, 'wb') as f:
+        with open(filename, 'wb') as f:
             pickle.dump(model_data, f)
 
 
