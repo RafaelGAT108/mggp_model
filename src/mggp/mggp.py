@@ -387,20 +387,21 @@ class MGGP:
                 
                 if self.froe_mode:
                     
-                    self._constrain_phi_functions(ind)
+                    # self._constrain_phi_functions(ind)
         
                     if np.random.random() < self.pruning_probability:
                         self._apply_froe_pruning(ind)
 
-                    theta_value = ind.hysteretic_constrained_ls(self.outputs, self.inputs)
+                    # theta_value = ind.hysteretic_constrained_ls(self.outputs, self.inputs)
+                    theta_value = ind.leastSquares(self.outputs, self.inputs)
                     ind.theta = theta_value
 
-                    if not self._check_hysteretic_constraints(ind):
-                        if self.new_evaluation is not None:
-                            return (np.inf, np.inf)
-                        
-                        else:
-                            return (np.inf,)
+                    # if not self._check_hysteretic_constraints(ind):
+                    #     if self.new_evaluation is not None:
+                    #         return (np.inf, np.inf)
+                    #
+                    #     else:
+                    #         return (np.inf,)
         
                 else:
                     if self.mode == "FIR":
