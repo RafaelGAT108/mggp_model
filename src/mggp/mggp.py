@@ -39,7 +39,7 @@ class MGGP:
                  mutationRate: float = 0.1,
                  populationSize: int = 100,
                  elitePercentage: int = 10,
-                 filename: str = "best_model_0",
+                 filename: str = "best_model",
                  mode: Literal['NARX', 'FIR'] = 'NARX',
                  problem_type: Literal['regression', 'classification'] = 'regression',
                  classification_metric: Literal['accuracy', 'log_loss', 'f1_macro'] = 'accuracy',
@@ -649,7 +649,7 @@ class MGGP:
         """
         import pickle
         if path is None:
-            with open(f"models_saved/best_model_0.pkl", 'rb') as f:
+            with open(f"models_saved/{self.filename}_0.pkl", 'rb') as f:
                 model_data = pickle.load(f)
         else:
             with open(path, 'rb') as f:
