@@ -1,135 +1,30 @@
-import os
-from mggp import MGGP
+from pathlib import Path
+
 import numpy as np
+import pytest
 
-def test_classification_runs(classification_data):
-
-    X_train, X_test, y_train, y_test = classification_data
-
-    model_file = "test_classification.pkl"
-
-    mggp = MGGP(
-        inputs=X_train,
-        outputs=y_train,
-        validation=(X_test, y_test),
-        problem_type="classification",
-        classification_metric="accuracy",
-        evaluationType='INSTANT',
-        evaluationTypeTest='INSTANT',
-        nDelays=1,
-        k=1,
-        generations=2,
-        populationSize=20,
-        nTerms=10,
-        maxHeight=2,
-        mutationRate=0.2,
-        crossoverRate=0.9,
-        filename=model_file,
-        mode="FIR",
-    )
-
-    mggp.run()
-
-    assert os.path.exists(f"models_saved/{model_file}_0.pkl")
-
-def test_classification_logloss_runs(classification_data):
-
-    X_train, X_test, y_train, y_test = classification_data
-
-    model_file = "test_classification.pkl"
-
-    mggp = MGGP(
-        inputs=X_train,
-        outputs=y_train,
-        validation=(X_test, y_test),
-        problem_type="classification",
-        classification_metric='log_loss',
-        evaluationType='INSTANT',
-        evaluationTypeTest='INSTANT',
-        nDelays=1,
-        k=1,
-        generations=2,
-        populationSize=20,
-        nTerms=10,
-        maxHeight=2,
-        mutationRate=0.2,
-        crossoverRate=0.9,
-        filename=model_file,
-        mode="FIR",
-    )
-
-    mggp.run()
-
-    assert os.path.exists(f"models_saved/{model_file}_0.pkl")
+from mggp import MGGP
 
 
-# def test_classification_predict_shape(classification_data):
-#
-#     X_train, X_test, y_train, y_test = classification_data
-#
-#     mggp = MGGP(
-#         inputs=X_train,
-#         outputs=y_train,
-#         validation=(X_test, y_test),
-#         problem_type="classification",
-#         classification_metric="accuracy",
-#             evaluationType='INSTANT',
-#             evaluationTypeTest='INSTANT',
-#         generations=2,
-#         populationSize=20,
-#     )
-#
-#     mggp.run()
-#
-#     y_pred = mggp.predict(X_test)
-#
-#     assert y_pred.shape[0] == X_test.shape[0]
-#
-# def test_classification_probability_sum(classification_data):
-#
-#     X_train, X_test, y_train, y_test = classification_data
-#
-#     mggp = MGGP(
-#         inputs=X_train,
-#         outputs=y_train,
-#         validation=(X_test, y_test),
-#         problem_type="classification",
-#         classification_metric="accuracy",
-#             evaluationType='INSTANT',
-#             evaluationTypeTest='INSTANT',
-#         generations=2,
-#         populationSize=20,
-#     )
-#
-#     mggp.run()
-#
-#     y_pred = mggp.predict(X_test)
-#
-#     np.testing.assert_allclose(
-#         y_pred.sum(axis=1),
-#         np.ones(len(y_pred)),
-#         atol=1e-6,
-#     )
-#
-#
-# def test_classification_better_than_random(classification_data):
-#
-#     X_train, X_test, y_train, y_test = classification_data
-#
-#     mggp = MGGP(
-#         inputs=X_train,
-#         outputs=y_train,
-#         validation=(X_test, y_test),
-#         problem_type="classification",
-#         classification_metric="accuracy",
-#             evaluationType='INSTANT',
-#             evaluationTypeTest='INSTANT',
-#         generations=5,
-#         populationSize=50,
-#     )
-#
-#     mggp.run()
-#
-#     acc = mggp._hof[0].Fitness
-#
-#     assert acc > 0.50
+@pytest.mark.parametrize("metric", ["accuracy", "log_loss"])
+def test_classifier_generalizes_and_checkpoint_reproduces_held_out_scores(classification_data, metric):
+    x, xv, y, yv = classification_data
+    engine = MGGP(inputs=x, outputs=y, validation=(xv, yv), mode="FIR",
+                  problem_type="classification", classification_metric=metric,
+                  evaluationType="INSTANT", evaluationTypeTest="INSTANT",
+                  generations=2, populationSize=20, nTerms=10, maxHeight=2,
+                  nDelays=1, mutationRate=.2, crossoverRate=.9, filename="classifier")
+    best, = engine.run()
+    assert Path("models_saved/classifier_0.pkl").is_file()
+    prediction, target = best.predict_proba("INSTANT", yv, xv)
+    reloaded, _ = engine.load_model().predict_proba("INSTANT", yv, xv)
+    np.testing.assert_allclose(prediction, reloaded)
+    true_labels = target.argmax(axis=1)
+    if metric == "accuracy":
+        score = np.mean(true_labels == prediction.argmax(axis=1))
+        majority = np.max(np.bincount(true_labels)) / len(true_labels)
+        assert score > majority
+    else:
+        likelihood = prediction[np.arange(len(target)), true_labels]
+        training_priors = y.mean(axis=0)
+        assert -np.log(likelihood).mean() < -np.log(training_priors[true_labels]).mean()
