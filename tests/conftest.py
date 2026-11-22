@@ -1,11 +1,12 @@
 import numpy as np
 import pytest
 import random
-from tensorflow.keras.utils import to_categorical
 from sklearn.model_selection import train_test_split
 
 @pytest.fixture(autouse=True)
-def set_seed():
+def set_seed(tmp_path, monkeypatch):
+    # Each training run owns its models_saved directory.
+    monkeypatch.chdir(tmp_path)
     np.random.seed(42)
     random.seed(42)
 
@@ -121,7 +122,7 @@ def classification_data():
         stratify=y,
     )
 
-    y_train = to_categorical(y_train, num_classes=3)
-    y_test = to_categorical(y_test, num_classes=3)
+    y_train = np.eye(3)[y_train]
+    y_test = np.eye(3)[y_test]
 
     return X_train, X_test, y_train, y_test
