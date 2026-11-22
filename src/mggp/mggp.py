@@ -13,6 +13,7 @@ from deap.tools import sortNondominated
 from copy import deepcopy
 from .mutations import *
 from .crossings import *
+from .utils import *
 from tqdm.auto import tqdm
 from IPython.display import clear_output
 # from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
@@ -154,7 +155,11 @@ class MGGP:
         self._hofSize = int(round(self.populationSize * (self.elitePercentage / 100)))
         self._hof = tools.HallOfFame(self._hofSize)
 
-        self._toolbox.register("select", tools.selTournament, tournsize=2)
+        if self.new_evaluation is not None:
+            self._toolbox.register("select", tools.selTournamentDCD)
+        
+        else:
+            self._toolbox.register("select", tools.selTournament, tournsize=2)
 
         self.addMutation(MutGPOneTree)
         self.addMutation(MutGPUniform)
@@ -292,6 +297,9 @@ class MGGP:
         if not self._pop:
             raise Exception('Population must be initialized!')
 
+        if self.new_evaluation is not None:
+            tools.emo.assignCrowdingDist(self._pop)
+
         offspring = [deepcopy(ind) for ind in self._toolbox.select(self._pop, self.populationSize - self._hofSize)]
 
         for i in range(0, len(offspring) - 1, 2):
@@ -310,24 +318,17 @@ class MGGP:
 
         invalid_ind = [ind for ind in offspring if not ind.fitness.valid]
 
-        if self.evaluationType == 'OSA':
-            fitnesses = list(tqdm(self._toolbox.map(self._toolbox.evaluate, invalid_ind), total=len(invalid_ind), desc="Evaluating Population"))
-
-        else:
-            fitnesses = list(tqdm(self._toolbox.map(self._toolbox.evaluate, invalid_ind), total=len(invalid_ind), desc="Evaluating Population"))
-            # fitnesses = list(self._toolbox.map(self._toolbox.evaluate, invalid_ind))
-            # with ProcessPoolExecutor(max_workers=10) as executor:
-            #     fitnesses = list(tqdm(executor.map(self.evaluation, invalid_ind), total=len(invalid_ind), desc="Evaluating Population"))
+        fitnesses = list(tqdm(self._toolbox.map(self._toolbox.evaluate, invalid_ind), total=len(invalid_ind), desc="Evaluating Population"))
 
         for ind, fit in zip(invalid_ind, fitnesses):
             ind.fitness.values = fit
 
-        # for i, ind in enumerate(offspring):
-        #     if (ind.fitness.values[0] in [np.inf, -np.inf]):
-        #         offspring[i] = self.element._toolbox.population(1)[0]
+        if self.new_evaluation is not None:
+            self._pop = self._survive(self._pop + offspring, self.populationSize)
 
-
-        self._pop = self._hof.items + offspring
+        else:
+            self._pop = self._hof.items + offspring
+        
         self._hof.update(self._pop)
 
         if self.new_evaluation is not None:
@@ -472,6 +473,10 @@ class MGGP:
 
         init = time.time()
         self.initPop(seed=seed)
+
+        if self.new_evaluation is not None:
+            tools.emo.assignCrowdingDist(self._pop)
+        
         self.stream()
         
         err_before = self._hof[0].fitness.values[0]
@@ -898,35 +903,21 @@ class MGGP:
         
         ind[:] = new_ind
 
-
-    # def _froe_pruning_mimo(self, ind: Individual, P: NDArray, yd: NDArray) -> None:
-    #     """FROE para modelos MIMO (aplica para cada saída)"""
-    #     for o in range(len(ind)):
-    #         P_o = P[o]
-    #         yd_o = yd[:, o] if yd.ndim > 1 else yd
-    #
-    #         n_terms = P_o.shape[1] - 1
-    #         err_values = []
-    #
-    #         for j in range(1, n_terms + 1):
-    #             w_j = P_o[:, j]
-    #             g_j = np.dot(w_j, yd_o) / np.dot(w_j, w_j)
-    #             err_j = (g_j**2 * np.sum(w_j**2)) / np.sum(yd_o**2)
-    #             err_values.append((j, err_j))
-    #
-    #         err_values.sort(key=lambda x: x[1], reverse=True)
-    #         terms_to_keep = [0]
-    #
-    #         for j, err in err_values:
-    #             if err >= self.pruning_tolerance:
-    #                 terms_to_keep.append(j)
-    #             else:
-    #                 if (j-1) < len(ind[o]):
-    #                     ind[o][j-1] = self.element._toolbox._program()
-    #
-    #         new_output = []
-    #         for i in range(len(ind[o])):
-    #             if i in [x-1 for x in terms_to_keep if x > 0]:
-    #                 new_output.append(ind[o][i])
-    #
-    #         ind[o][:] = new_output
+    def _survive(self, pool, n):
+            # Escolha dos SOBREVIVENTES entre pais + filhos (elitismo do NSGA-II).
+            # Antes, separo as estruturas repetidas: se dois indivíduos têm os mesmos termos,
+            # só um conta como "único". Sem isso a população se enche de cópias do mesmo modelo.
+            valid = [ind for ind in pool if finite(ind)]
+            unique, repeated, seen = [], [], set()
+            for ind in valid:
+                key = canonical_terms(ind)
+                (repeated if key in seen else unique).append(ind)
+                seen.add(key)
+            if len(unique) >= n:
+                return tools.selNSGA2(unique, n)
+            # Se não houver estruturas diferentes suficientes, completo com as repetidas
+            # e, só em último caso, com as que divergiram.
+            need = n - len(unique)
+            fill = tools.selNSGA2(repeated, min(need, len(repeated))) if repeated else []
+            invalid = [ind for ind in pool if not finite(ind)]
+            return unique + fill + invalid[: need - len(fill)]
