@@ -1,395 +1,115 @@
-
-from __future__ import annotations
-from tqdm import tqdm
+"""Predictors return (predictions, references), with one row per time step."""
 import numpy as np
-from numpy.typing import NDArray
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    from mggp.base import Individual
 
+def _columns(values):
+    values = np.asarray(values)
+    return values[:, None] if values.ndim == 1 else values
 
-def miso_FIR_INSTANT(ind: Individual, y_true: NDArray, u: NDArray) -> tuple[NDArray, NDArray]:
-    """
-    FIR instantâneo (mesmo instante):
-      y_pred[k] alinhado com y_true[k], iniciando em k = lagMax
-    """
-    regressors = ind.makeRegressors(y_true, u)
-    return np.dot(regressors, ind.theta), y_true[ind.lagMax:]
 
+def _fitted_values(ind, y, u, align="OSA"):
+    y = _columns(y)
+    if ind.input_only:
+        regressors = ind.makeRegressors(y, u, align=align)
+    else:
+        regressors = ind.makeRegressors(y, u)
+    if ind.multi_output:
+        predictions = np.column_stack([p @ theta for p, theta in zip(regressors, ind.theta)])
+    else:
+        predictions = _columns(regressors @ ind.theta)
+    start = ind.lagMax + int(ind.input_only and align == "OSA")
+    return predictions, y[start:]
 
-def mimo_FIR_INSTANT(ind: Individual, y_true: NDArray, u: NDArray) -> tuple[NDArray, NDArray]:
-    """
-    FIR instantâneo (MIMO):
-      y_pred[k,:] alinhado com y_true[k,:], iniciando em k = lagMax
-    """
-    regressors = ind.makeRegressors(y_true, u)
-    y_pred = [np.dot(regressor, theta) for regressor, theta in zip(regressors, np.array(ind.theta))]
-    return np.array(y_pred).T, y_true[ind.lagMax:]
 
+def miso_OSA(ind, y_true, u):
+    return _fitted_values(ind, y_true, u)
 
-def mimo_INSTANT(ind: Individual, y_true: NDArray, u: NDArray) -> tuple[NDArray, NDArray]:
-    regressors = ind.makeRegressors(y_true, u)
-    yp = [np.dot(regressor, theta) for regressor, theta in zip(regressors, np.array(ind.theta))]
-    y_pred = np.array(yp).T
-    y_true = y_true[ind.lagMax:]          # mesmo instante
-    return y_pred, y_true
 
+def mimo_OSA(ind, y_true, u):
+    return _fitted_values(ind, y_true, u)
 
-def mimo_CLASSIFY(ind: Individual, y_true: NDArray, u: NDArray) -> tuple[NDArray, NDArray]:
-    """
-    Preditor "mesmo instante" para classificação (MIMO).
-    Alinha y_pred[k] com y_true[k], iniciando em k = lagMax.
-    """
-    regressors = ind.makeRegressors(y_true, u)
-    yp = [np.dot(regressor, theta) for regressor, theta in zip(regressors, np.array(ind.theta))]
-    return np.array(yp).T, y_true[ind.lagMax:]
 
+def miso_FIR_INSTANT(ind, y_true, u):
+    return _fitted_values(ind, y_true, u, align="INSTANT")
 
-def miso_CLASSIFY(ind: Individual, y_true: NDArray, u: NDArray) -> tuple[NDArray, NDArray]:
-    """
-    Preditor "mesmo instante" para classificação (MIMO).
-    Alinha y_pred[k] com y_true[k], iniciando em k = lagMax.
-    """
-    regressors = ind.makeRegressors(y_true, u)
-    
-    y_pred = np.dot(regressors, ind.theta)
-    return np.array(y_pred).T, y_true[ind.lagMax:]
 
+def mimo_FIR_INSTANT(ind, y_true, u):
+    return _fitted_values(ind, y_true, u, align="INSTANT")
 
-def miso_OSA(ind: Individual, y_true: NDArray, u: NDArray) -> tuple[NDArray, NDArray]:
-    """
-    Implements the One-Step_Ahead predictor for MISO models
-    Arguments:
-        ind = C_Individual object
-        y   = 1-dimensional array with output data
-        u   = n-dimensional array with input data
-    """
-    regressors = ind.makeRegressors(y_true, u)
-    y_pred = np.dot(regressors, ind.theta)
-    return y_pred, y_true[ind.lagMax + 1:]
 
+def mimo_INSTANT(ind, y_true, u):
+    return _fitted_values(ind, y_true, u, align="INSTANT")
 
-def mimo_OSA(ind: Individual, y_true: NDArray, u: NDArray) -> tuple[NDArray, NDArray]:
-    """
-    Implements the One-Step_Ahead predictor for MIMO models
-    Arguments:
-        ind = C_Individual object
-        y   = n-dimensional array with output data
-        u   = m-dimensional array with input data
-    """
-    regressors = ind.makeRegressors(y_true, u)
-    y_pred = [np.dot(regressor, theta) for regressor, theta in zip(regressors, np.array(ind.theta))]
 
-    return np.array(y_pred).T, y_true[ind.lagMax + 1:]
+def mimo_CLASSIFY(ind, y_true, u):
+    return _fitted_values(ind, y_true, u, align="INSTANT")
 
 
-def miso_FreeRun(ind: Individual, y_true: NDArray, u: NDArray) -> tuple[NDArray, NDArray]:
+def miso_CLASSIFY(ind, y_true, u):
+    return _fitted_values(ind, y_true, u, align="INSTANT")
 
-    y_true = y_true.reshape(-1, 1)
 
-    if u.ndim == 1:
-        u = u.reshape(-1, 1)
+def _simulate(ind, y, u, horizon=None):
+    """Simulate independent windows with measured initial conditions for each."""
+    y, u = _columns(y), _columns(u)
+    if len(y) != len(u):
+        raise ValueError("Inputs and outputs must have the same number of samples")
+    warmup = ind.lagMax + int(ind.input_only)
+    if horizon is not None and (not isinstance(horizon, (int, np.integer)) or horizon < 1):
+        raise ValueError("MShooting requires a positive integer horizon")
+    width = len(y) if horizon is None else warmup + horizon
+    if len(y) <= warmup or width > len(y):
+        raise ValueError("Not enough samples for the history and prediction horizon")
 
-    lag = ind.lagMax
-    n_samples = u.shape[0]
+    batch_count = len(y) // width
+    end = batch_count * width
+    observed = y[:end].reshape(batch_count, width, y.shape[1])
+    inputs = u[:end].reshape(batch_count, width, u.shape[1])
+    # The leading slot aligns y[t-1] with u[t]. The valid lag bound guarantees
+    # that a gene cannot read this placeholder in the first forecast.
+    predicted = np.zeros((batch_count, width + 1, y.shape[1]))
+    predicted[:, 1:warmup + 1] = observed[:, :warmup]
+    equations = ind.funcs if ind.multi_output else [ind.funcs]
+    coefficients = ind.theta if ind.multi_output else [ind.theta]
+    for t in range(warmup, width):
+        first = t - ind.lagMax
+        if ind.input_only:
+            window = inputs[:, first - 1:t]
+            variables = []
+        else:
+            window = inputs[:, first:t + 1]
+            variables = [predicted[:, first:t + 1, j:j + 1] for j in range(y.shape[1])]
+        variables.extend(window[:, :, j:j + 1] for j in range(u.shape[1]))
+        for j, (terms, theta) in enumerate(zip(equations, coefficients)):
+            regressors = [np.ones(batch_count)]
+            regressors.extend(term(*variables)[:, -1, 0] for term in terms)
+            predicted[:, t + 1, j] = np.column_stack(regressors) @ np.asarray(theta).ravel()
+    start = warmup if horizon is None else 0
+    return (np.nan_to_num(predicted[:, start + 1:].reshape(-1, y.shape[1])),
+            observed[:, start:].reshape(-1, y.shape[1]))
 
-    y = y_true[:lag].copy()
 
-    y_pred = []
+def miso_FreeRun(ind, y_true, u):
+    return _simulate(ind, y_true, u)
 
-    for k in range(lag, n_samples):
 
-        y_window = y[k - lag:k].reshape(-1, 1)
+def mimo_FreeRun(ind, y_true, u):
+    return _simulate(ind, y_true, u)
 
-        listV = [y_window]
 
-        for v in u.T:
-            u_window = v[k - lag:k + 1].reshape(-1, 1)
-            listV.append(u_window)
+def mimo_FIR_FreeRun(ind, y_true, u):
+    # An FIR model has no output feedback. A single matrix product evaluates
+    # the entire free run with the one-step input alignment.
+    return _fitted_values(ind, y_true, u)
 
-        regressors = [1.0]
-        # regressors = []
 
-        for j in range(len(ind)):
-            func = ind.funcs[j]
-            out = func(*listV)
-            # regressors.append(float(out[-1]))
-            try:
-                val = float(out[-1][0])
+def miso_MShooting(ind, k, y, u):
+    return _simulate(ind, y, u, k)
 
-            except (IndexError, ValueError):
-                val = 0.0
 
-            regressors.append(val)
+def mimo_MShooting(ind, k, y_true, u):
+    return _simulate(ind, y_true, u, k)
 
-        yk = np.dot(regressors, ind.theta)
-        y = np.vstack((y, [yk]))
-        y_pred.append(yk)
 
-    y_pred = np.array(y_pred).reshape(-1, 1)
-    y_true_trim = y_true[lag:]
-
-    return np.nan_to_num(y_pred, nan=0), np.nan_to_num(y_true_trim, nan=0)
-
-
-def mimo_FreeRun(ind: Individual, y_true: NDArray, u: NDArray) -> tuple[NDArray, NDArray]:
-    """
-    Free-Run predictor for MIMO models (consistente com u[k] e y[k-1])
-    """
-
-    if u.ndim == 1:
-        u = u.reshape(-1, 1)
-    if y_true.ndim == 1:
-        y_true = y_true.reshape(-1, 1)
-
-    lag = ind.lagMax
-    n_samples = u.shape[0]
-    n_outputs = y_true.shape[1]
-    n_inputs = u.shape[1]
-    y = y_true[:lag, :].copy()
-
-    y_pred = []
-
-    for k in range(lag, n_samples):
-
-        y_windows = [y[k - lag:k, i:i+1] for i in range(n_outputs)]
-        # u_windows = [u[k - lag:k + 1, j:j+1] for j in range(n_inputs)]
-        u_windows = [u[k - lag+1:k+1, i:i+1] for i in range(n_inputs)]
-
-        listV = y_windows + u_windows
-
-        yk_all_outputs = []
-
-        for idx_output in range(len(ind)):
-
-            regressors = [1.0]  # bias
-
-            for j in range(len(ind[idx_output])):
-
-                func = ind.funcs[idx_output][j]
-                try:
-                    out = func(*listV)
-                except AttributeError:
-                    out = np.asarray([0])
-                    print("allert!")
-                out2 = out.reshape(-1)
-                regressors.append(out2[-1])
-
-            theta_k = ind.theta[idx_output]
-            yk = np.dot(regressors, theta_k)
-
-            yk_all_outputs.append(yk)
-
-        yk_all_outputs = np.array(yk_all_outputs).reshape(1, -1)
-
-        y = np.vstack((y, yk_all_outputs))
-        y_pred.append(yk_all_outputs)
-
-    y_pred = np.vstack(y_pred)  # (n_samples-lag, n_outputs)
-    y_true_trim = y_true[lag:, :]
-
-    return np.nan_to_num(y_pred, nan=0), np.nan_to_num(y_true_trim, nan=0)
-    
-
-def mimo_FIR_FreeRun(ind: Individual, y_true: NDArray, u: NDArray) -> tuple[NDArray, NDArray]:
-    """
-    Implements the Free-Run predictor for MIMO models.
-    Args:
-        ind: C_Individual object (MIMO).
-        y0: Initial conditions (n_outputs x history).
-        u: Input data (n_samples x n_inputs).
-    Returns:
-        y_pred: Predicted outputs (n_samples x n_outputs).
-        y_true: Ground truth (trimmed to match y_pred).
-    """
-    if len(u.shape) == 1:
-        u = u.reshape(-1, 1)
-    if len(y_true.shape) == 1:
-        y_true = y_true.reshape(-1, 1)
-
-    n_samples = u.shape[0]
-    n_outputs = y_true.shape[1]
-    initial_conditions_size = ind.lagMax
-    y_pred = np.zeros((n_samples - initial_conditions_size, n_outputs))
-    
-    y_history = y_true[:initial_conditions_size + 1 , :].copy()
-
-    for step in tqdm(range(n_samples - initial_conditions_size), desc="Processing iterations in FreeRun"):
-
-        listV = []
-        for v in u.T:
-            listV.append(v[step:step + initial_conditions_size + 1].reshape(-1, 1))
-
-        for idx_output in range(n_outputs):
-            regressors = [1.0]  # bias
-
-            for idx_equation_tree in range(len(ind[idx_output])):
-
-                genetic_programming_term = ind.funcs[idx_output][idx_equation_tree]
-                out = genetic_programming_term(*listV)
-
-                out = out.reshape(-1)
-                regressors.append(out[-1])
-            
-            y_pred[step, idx_output] = np.dot(regressors, ind.theta[idx_output])
-
-        y_history = np.column_stack([y_history.T, y_pred[step, :]]).T
-
-    y_true = y_true[initial_conditions_size:, :]
-    return y_pred, y_true
-
-
-def miso_MShooting(ind: Individual, k: int, y: NDArray, u: NDArray) -> tuple[NDArray, NDArray]:
-    """
-    Implements the Multiple-Shooting predictor for MISO models
-    Arguments:
-        ind = C_Individual object
-        k   = steps ahead prediction for each 'shooting'
-        y   = 1-dimensional array with output data
-        u   = n-dimensional array with input data
-    """
-    if len(y.shape) == 1:
-        y = y.reshape(-1, 1)
-    if len(u.shape) == 1:
-        u = u.reshape(-1, 1)
-
-    initial_conditions_size = ind.lagMax 
-    batch_size = initial_conditions_size + k
-    n_batchs = int(np.floor(u.shape[0] / batch_size))
-    newshape = (n_batchs, batch_size, 1)
-
-    listU = [np.resize(v, newshape) for v in u.T]
-    y_true = np.resize(y, newshape)
-    y_pred = y_true[:, :initial_conditions_size , :]
-
-    for shooting in range(k):
-
-        regressors = []
-        out = np.ones((n_batchs, 1, 1))
-        regressors.append(out)
-
-        for idx_output_equation in range(len(ind)):
-
-            genetic_programming_term = ind.funcs[idx_output_equation]
-
-            y_window = [y_pred[:, shooting:shooting + initial_conditions_size, :]]
-            u_window = [v[:, shooting:shooting + initial_conditions_size + 1, :] for v in listU]
-
-            listV = y_window + u_window
-
-            out = genetic_programming_term(*listV)
-            out = out[:, -1:, :]
-            regressors.append(out)
-
-        regressors = np.concatenate(regressors, axis=2)
-        y_pred = np.concatenate((y_pred, np.dot(regressors, ind.theta)), axis=1)
-    
-    return np.nan_to_num(y_pred.reshape(-1, 1), nan=0), np.nan_to_num(y_true.reshape(-1, 1), nan=0)
-
-
-def mimo_MShooting(ind: Individual, k: int, y_true: NDArray, u: NDArray) -> tuple[NDArray, NDArray]:
-    """
-    Multiple-Shooting predictor for MIMO models
-    """
-
-    if len(y_true.shape) == 1:
-        y_true = y_true.reshape(-1, 1)
-    if len(u.shape) == 1:
-        u = u.reshape(-1, 1)
-
-    initial_conditions_size = ind.lagMax
-    batch_size = initial_conditions_size + k
-    n_batchs = int(np.floor(u.shape[0] / batch_size))
-
-    newshape_u = (n_batchs, batch_size, 1)
-    listU = [np.resize(v, newshape_u) for v in u.T]
-
-    y_true = np.resize(y_true, (n_batchs, batch_size, y_true.shape[1]))
-    y_pred = y_true[:, :initial_conditions_size, :]
-
-    for shooting in range(k):
-
-        predictions_for_output_equation = []
-
-        for idx_output_equation in range(len(ind)):
-
-            regressors = []
-
-            # bias
-            out = np.ones((n_batchs, 1, 1))
-            regressors.append(out)
-
-            y_window = [y_pred[:, shooting:shooting + initial_conditions_size, i:i+1] for i in range(y_pred.shape[2])]
-            u_window = [v[:, shooting:shooting + initial_conditions_size + 1, :] for v in listU]
-
-            listV = y_window + u_window
-
-            for idx_tree in range(len(ind[idx_output_equation])):
-
-                genetic_programming_term = ind.funcs[idx_output_equation][idx_tree]
-                out = genetic_programming_term(*listV)
-                out = out[:, -1:, :]
-
-                regressors.append(out)
-
-            regressors = np.concatenate(regressors, axis=2)
-
-            theta_k = ind.theta[idx_output_equation] 
-            output_pred = np.dot(regressors, theta_k.T).reshape(n_batchs, 1, 1)
-
-            predictions_for_output_equation.append(output_pred)
-
-        predictions_for_output_equation = np.concatenate(predictions_for_output_equation, axis=2)
-        y_pred = np.concatenate((y_pred, predictions_for_output_equation), axis=1)
-
-    return np.nan_to_num(y_pred.reshape(-1, y_pred.shape[1]), nan=0), np.nan_to_num(y_true.reshape(-1, y_true.shape[1]), nan=0)
-
-
-def mimo_FIR_MShooting(ind: Individual, k: int, y_true: NDArray, u: NDArray) -> tuple[NDArray, NDArray]:
-
-    if len(y_true.shape) == 1:
-        y_true = y_true.reshape(-1, 1)
-    if len(u.shape) == 1:
-        u = u.reshape(-1, 1)
-    
-    initial_conditions_size = ind.lagMax 
-    batch_size = initial_conditions_size + 1 + k
-    n_batchs = int(np.floor(u.shape[0] / batch_size))
-    newshape = (n_batchs, batch_size, 1)
-
-    listU = []
-    for v in u.T:
-        listU.append(np.resize(v, newshape))
-
-    y_true = np.resize(y_true, (n_batchs, batch_size, y_true.shape[1]))
-    y_pred = y_true[:, :initial_conditions_size + 1, :]
-
-    for shooting in range(k):
-
-        listV = []
-        for v in listU:
-            listV.append(v[:, shooting:shooting + initial_conditions_size + 1, 0].reshape(n_batchs, -1, 1))
-
-        predictions_for_output_equation = []
-        for idx_output_equation in range(len(ind)):
-
-            regressors = []
-            out = np.ones((n_batchs, 1, 1))
-            regressors.append(out)
-
-            for idx_equation_tree in range(len(ind[idx_output_equation])):
-
-                func = ind.funcs[idx_output_equation][idx_equation_tree]
-                out = func(*listV)
-                out = out[:, initial_conditions_size:, :]
-                regressors.append(out)
-
-            regressors = np.concatenate(regressors, axis=2)
-            output_pred = np.dot(regressors, ind.theta[idx_output_equation].T).reshape(-1, 1, 1)
-            predictions_for_output_equation.append(output_pred)
-        
-        predictions_for_output_equation = np.concatenate(predictions_for_output_equation, axis=2)
-        y_pred = np.concatenate((y_pred, predictions_for_output_equation), axis=1)
-
-    return np.nan_to_num(y_pred.reshape(-1, y_true.shape[1]), nan=0), np.nan_to_num(y_true.reshape(-1, y_true.shape[1]), nan=0)
+def mimo_FIR_MShooting(ind, k, y_true, u):
+    return _simulate(ind, y_true, u, k)
