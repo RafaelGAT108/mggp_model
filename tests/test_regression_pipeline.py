@@ -24,7 +24,9 @@ def test_training_reduces_error(siso_data):
 
     final_best = model._hof[0].fitness.values[0]
 
-    assert final_best <= initial_best or np.isfinite(final_best)
+    assert np.isfinite(initial_best)
+    assert np.isfinite(final_best)
+    assert final_best <= initial_best
 
 
 def test_miso_training_reduces_error(miso_data):
@@ -47,7 +49,9 @@ def test_miso_training_reduces_error(miso_data):
 
     final_best = model._hof[0].fitness.values[0]
 
-    assert final_best <= initial_best or np.isfinite(final_best)
+    assert np.isfinite(initial_best)
+    assert np.isfinite(final_best)
+    assert final_best <= initial_best
 
 
 def test_mimo_training_reduces_error(mimo_data):
@@ -71,7 +75,9 @@ def test_mimo_training_reduces_error(mimo_data):
 
     final_best = model._hof[0].fitness.values[0]
 
-    assert final_best <= initial_best or np.isfinite(final_best)
+    assert np.isfinite(initial_best)
+    assert np.isfinite(final_best)
+    assert final_best <= initial_best
 
 
 def test_fir_training_reduces_error(mimo_data):
@@ -96,7 +102,9 @@ def test_fir_training_reduces_error(mimo_data):
 
     final_best = model._hof[0].fitness.values[0]
 
-    assert final_best <= initial_best or np.isfinite(final_best)
+    assert np.isfinite(initial_best)
+    assert np.isfinite(final_best)
+    assert final_best <= initial_best
 
 
 def test_hysteresis_training_reduces_error(hysteresis_siso_data):
@@ -121,7 +129,9 @@ def test_hysteresis_training_reduces_error(hysteresis_siso_data):
 
     final_best = model._hof[0].fitness.values[0]
 
-    assert final_best <= initial_best or np.isfinite(final_best)
+    assert np.isfinite(initial_best)
+    assert np.isfinite(final_best)
+    assert final_best <= initial_best
 
 
 def test_siso_training_run(hysteresis_siso_data):
