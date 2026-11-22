@@ -65,21 +65,17 @@ class MutGPOneTree(Mutation):
 
     def __init__(self, element):
         super().__init__(element)
-        # self._toolbox.register("expr_mut", gp.genHalfAndHalf, min_=0, max_=self._element._maxHeight - 1)
+        # self._toolbox.register("expr_mut", gp.genHalfAndHalf, min_=0, max_=max(0, self._element._maxHeight - 1))
         
         # self._toolbox.register("expr_mut", self.generate_terminal_only)
-        self._toolbox.register("expr_mut", self.genGrowLimitedNodes, min_depth=0, max_depth=self._element._maxHeight-1, max_nodes=20)
+        self._toolbox.register("expr_mut", self.genGrowLimitedNodes, min_depth=0, max_depth=max(0, self._element._maxHeight - 1), max_nodes=20)
         self._toolbox.register("mutateGP", gp.mutUniform, expr=self._toolbox.expr_mut, pset=self._element.pset)
 
     def mutate(self, ind: Individual) -> Individual:
-        if self._element._mode in ['SISO', 'MISO']:
-            idx = random.randint(0, len(ind) - 1)
-            ind[idx] = self._gpConstraint(self._toolbox.mutateGP, ind[idx])[0]
-
-        if self._element._mode == 'MIMO' or (self._element._mode == 'FIR' and self._element._nOutputs > 1):
-            for o in range(len(ind)):
-                idx = random.randint(0, len(ind[o]) - 1)
-                ind[o][idx] = self._gpConstraint(self._toolbox.mutateGP, ind[o][idx])[0]
+        for genes in (ind if ind.multi_output else [ind]):
+            if genes:
+                idx = random.randrange(len(genes))
+                genes[idx], = self._gpConstraint(self._toolbox.mutateGP, genes[idx])
         return ind,
 
 
@@ -98,19 +94,19 @@ class MutGPUniform(Mutation):
 
     def __init__(self, element):
         super().__init__(element)
-        self._toolbox.register("expr_mut", gp.genHalfAndHalf, min_=0, max_=self._element._maxHeight - 1)
+        self._toolbox.register("expr_mut", gp.genHalfAndHalf, min_=0, max_=max(0, self._element._maxHeight - 1))
         # self._toolbox.register("expr_mut", self.generate_terminal_only)
-        # self._toolbox.register("expr_mut", self.genGrowLimitedNodes, min_depth=0, max_depth=self._element._maxHeight-1, max_nodes=20)
+        # self._toolbox.register("expr_mut", self.genGrowLimitedNodes, min_depth=0, max_depth=max(0, self._element._maxHeight - 1), max_nodes=20)
         self._toolbox.register("mutateGP", gp.mutUniform, expr=self._toolbox.expr_mut, pset=self._element.pset)
 
     def mutate(self, ind: Individual) -> Individual:
-        if self._element._mode in ['SISO', 'MISO']:
+        if not ind.multi_output:
             indpb = 0.50
             for i in range(len(ind)):
                 if random.random() < indpb:
                     ind[i] = self._gpConstraint(self._toolbox.mutateGP, ind[i])[0]
                     
-        if self._element._mode == 'MIMO' or (self._element._mode == 'FIR' and self._element._nOutputs > 1):
+        else:
             indpb = 0.50
             for o in range(len(ind)):
                 for i in range(len(ind[o])):
@@ -134,14 +130,10 @@ class MutGPReplace(Mutation):
         super().__init__(element)
 
     def mutate(self, ind: Individual) -> Individual:
-        if self._element._mode in ['SISO', 'MISO']:
-
-            idx = random.randint(0, len(ind) - 1)
-            ind[idx] = self._element._toolbox._program()
-
-
-        if self._element._mode == 'MIMO' or (self._element._mode == 'FIR' and self._element._nOutputs > 1):
-            for o in range(len(ind)):
-                idx = random.randint(0, len(ind[o]) - 1)
-                ind[o][idx] = self._element._toolbox._program()
+        for genes in (ind if ind.multi_output else [ind]):
+            gene = self._element._toolbox._program()
+            if genes:
+                genes[random.randrange(len(genes))] = gene
+            else:
+                genes.append(gene)
         return ind,
