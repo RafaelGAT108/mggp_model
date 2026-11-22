@@ -28,8 +28,8 @@ def mcase1(u, y):
         -4.36e-4
     ]
 
-    u = np.asarray(u)
-    y = np.asarray(y)
+    u = np.asarray(u).reshape(-1)
+    y = np.asarray(y).reshape(-1)
 
     N = len(u)
     y_pred = np.zeros(N)
@@ -103,14 +103,10 @@ def mggp_predict(X_val, y_val,
                  evaluationTypeTest = "FreeRun", 
                  save_model="mggp_models_hysteresis/model_1.pkl"):
     
-    loaded_model = MGGP(inputs=X_val,
-                    outputs=y_val,
-                    filename=save_model,
-                    mode="NARX",  
-                    operators=['mul', 'sign', 'subtraction']
-                    # kwargs={'operators': ['mul', 'subtraction', 'sign']}
-                    ).load_model()
-    # loaded_model.theta[0][0] = 0
+    engine = MGGP(inputs=X_val, outputs=y_val, filename=save_model, mode="NARX",
+                  operators=["mul", "sign", "subtraction"])
+    path = save_model if os.path.isfile(save_model) else None
+    loaded_model = engine.load_model(path)
     args = (y_val, X_val)
     mggp_yp, mggp_yd = loaded_model.predict(evaluationTypeTest, *args)
 
@@ -220,6 +216,12 @@ def analyze_cross_correlations(u_train, y_train, max_lag):
             lags = signal.correlation_lags(len(output_signal), len(input_signal), mode='full')
             
             # Encontrar o pico de correlação
+            if max_lag is not None:
+                if max_lag < 0:
+                    raise ValueError("max_lag must be nonnegative")
+                selected = np.abs(lags) <= max_lag
+                lags = lags[selected]
+                correlation_normalized = correlation_normalized[selected]
             peak_idx = np.argmax(np.abs(correlation_normalized))
             peak_lag = lags[peak_idx]
             peak_value = correlation_normalized[peak_idx]
@@ -248,7 +250,7 @@ def media_movel_pandas(data, window_size=5, min_periods=1):
         return series.rolling(window=window_size, min_periods=min_periods).mean().values
     
     else:
-        smoothed = np.zeros_like(data)
+        smoothed = np.empty(data.shape, dtype=float)
         for i in range(data.shape[1]):
             series = pd.Series(data[:, i])
             smoothed[:, i] = series.rolling(window=window_size, min_periods=min_periods).mean().values

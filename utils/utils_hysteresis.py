@@ -12,17 +12,17 @@ import pickle
 from sklearn.metrics import mean_absolute_percentage_error, mean_absolute_error, r2_score
 
 def sign(X1, X2):
-    return np.sign(X1 - X2)[0]
+    result = np.sign(X1 - X2)
+    return result if np.ndim(result) == 0 else result[0]
 
 def sub(X1, X2):
     res = X1 - X2
-    return res[0]
+    return res if np.ndim(res) == 0 else res[0]
 
 def mcase_21(u, y_init):
 
-    u = np.asarray(u)
+    u = np.asarray(u).reshape(-1)
     N = len(u)
-    u = np.asarray([x[0] for x in u])
     y_pred = np.zeros(N)
     terms = np.zeros((11, N))
 
@@ -174,7 +174,7 @@ def mcase24_free_run_terms(u, y_init):
 
 
 def comparecase_free_run(u, y_init):
-    u = np.asarray(u)
+    u = np.asarray(u).reshape(-1)
     N = len(u)
 
     y_pred = np.zeros(N)
@@ -195,10 +195,10 @@ def comparecase_free_run(u, y_init):
     for k in range(3, N):
         terms[0, k] = theta[0] * y_pred[k-1]
         terms[1, k] = theta[1] * sub(u[k-1], u[k-2])
-        terms[2, k] = theta[2] * u[k-2][0] * sign(u[k-2], u[k-3]) * sub(u[k-2], u[k-3])
+        terms[2, k] = theta[2] * u[k-2] * sign(u[k-2], u[k-3]) * sub(u[k-2], u[k-3])
         terms[3, k] = theta[3] * y_pred[k-1] * sign(u[k-2], u[k-3]) * sub(u[k-2], u[k-3])
-        terms[4, k] = theta[4] * u[k - 2][0] * u[k - 2][0] * sub(u[k-2], u[k-3])
-        terms[5, k] = theta[5] * u[k - 2][0] * y_pred[k-1] * sub(u[k-2], u[k-3])
+        terms[4, k] = theta[4] * u[k - 2] * u[k - 2] * sub(u[k-2], u[k-3])
+        terms[5, k] = theta[5] * u[k - 2] * y_pred[k-1] * sub(u[k-2], u[k-3])
 
         y_pred[k] = np.sum(terms[:, k])
 
@@ -206,13 +206,13 @@ def comparecase_free_run(u, y_init):
 
 
 def mcase_free_run_terms(u, y_init):
-    u = np.asarray(u)
+    u = np.asarray(u).reshape(-1)
     N = len(u)
 
     y_pred = np.zeros(N)
     terms = np.zeros((11, N))
 
-    y_pred[:10] = y_init[:10].reshape(-1)
+    y_pred[:11] = y_init[:11].reshape(-1)
 
     theta = [
         -6.449701883681769e-14,
@@ -228,7 +228,7 @@ def mcase_free_run_terms(u, y_init):
         0.7530926667022311
     ]
 
-    for k in range(10, N):
+    for k in range(11, N):
               
         terms[0, k]  = theta[0]
         terms[1, k]  = theta[1] * y_pred[k-3]
@@ -244,7 +244,7 @@ def mcase_free_run_terms(u, y_init):
 
         y_pred[k] = np.sum(terms[:, k])
 
-    return y_pred[10:], terms[:, 10:]
+    return y_pred[11:], terms[:, 11:]
 
 
 def insert_constant_segments(signal, n_const=3, len_const=100, seed=42):
@@ -285,12 +285,12 @@ def insert_constant_segments(signal, n_const=3, len_const=100, seed=42):
 
 
 def mcase(u, y_init):
-    u = np.asarray(u)
+    u = np.asarray(u).reshape(-1)
     N = len(u)
 
     y_pred = np.zeros(N)
 
-    y_pred[:10] = y_init[:10].reshape(-1)
+    y_pred[:11] = y_init[:11].reshape(-1)
 
     theta = [
         -6.449701883681769e-14,
@@ -306,7 +306,7 @@ def mcase(u, y_init):
         0.7530926667022311
     ]
 
-    for k in range(10, N):
+    for k in range(11, N):
 
         y_pred[k] = (
             theta[0] +
@@ -326,13 +326,13 @@ def mcase(u, y_init):
 
 
 def mcaseOSA(u, y):
-    u = np.asarray(u)
-    y = np.asarray(y)
+    u = np.asarray(u).reshape(-1)
+    y = np.asarray(y).reshape(-1)
 
     N = len(u)
     y_pred = np.zeros(N)
     
-    y_pred[:10] = y[:10].reshape(-1)
+    y_pred[:11] = y[:11].reshape(-1)
     theta = [
         -6.449701883681769e-14,
         0.300742221603808,
@@ -347,7 +347,7 @@ def mcaseOSA(u, y):
         0.7530926667022311
     ]
 
-    for k in range(10, N):
+    for k in range(11, N):
 
         y_pred[k] = (
             theta[0] +  # bias
@@ -379,8 +379,8 @@ def mcase1(u, y):
         -4.36e-4
     ]
 
-    u = np.asarray(u)
-    y = np.asarray(y)
+    u = np.asarray(u).reshape(-1)
+    y = np.asarray(y).reshape(-1)
 
     N = len(u)
     y_pred = np.zeros(N)
@@ -416,7 +416,7 @@ def mcase2(u, y_init):
              1.38e+1,
              1.00]
 
-    u = np.asarray(u)
+    u = np.asarray(u).reshape(-1)
     N = len(u)
 
     y_pred = np.zeros(N)
@@ -454,8 +454,8 @@ def mcase2OSA(u, y):
             1.38e+1,
             1.00]
 
-    u = np.asarray(u)
-    y = np.asarray(y)
+    u = np.asarray(u).reshape(-1)
+    y = np.asarray(y).reshape(-1)
 
     N = len(u)
 
@@ -483,13 +483,10 @@ def mggp_predict(X_val, y_val,
                  evaluationTypeTest = "FreeRun", 
                  save_model="mggp_models_hysteresis/model_1.pkl"):
     
-    loaded_model = MGGP(inputs=X_val,
-                    outputs=y_val,
-                    filename=save_model,
-                    mode="NARX",
-                    kwargs={'operators': ['mul', 'subtraction', 'sign']}).load_model()
-
-    loaded_model.theta = loaded_model.hysteretic_constrained_ls(y_val, X_val)
+    engine = MGGP(inputs=X_val, outputs=y_val, filename=save_model, mode="NARX",
+                  operators=["mul", "sign", "subtraction"])
+    path = save_model if os.path.isfile(save_model) else None
+    loaded_model = engine.load_model(path)
     args = (y_val, X_val)
     mggp_yp, mggp_yd = loaded_model.predict(evaluationTypeTest, *args)
 
@@ -597,6 +594,12 @@ def analyze_cross_correlations(u_train, y_train, max_lag):
             lags = signal.correlation_lags(len(output_signal), len(input_signal), mode='full')
             
             # Encontrar o pico de correlação
+            if max_lag is not None:
+                if max_lag < 0:
+                    raise ValueError("max_lag must be nonnegative")
+                selected = np.abs(lags) <= max_lag
+                lags = lags[selected]
+                correlation_normalized = correlation_normalized[selected]
             peak_idx = np.argmax(np.abs(correlation_normalized))
             peak_lag = lags[peak_idx]
             peak_value = correlation_normalized[peak_idx]
@@ -624,7 +627,7 @@ def media_movel_pandas(data, window_size=5, min_periods=1):
         return series.rolling(window=window_size, min_periods=min_periods).mean().values
     
     else:
-        smoothed = np.zeros_like(data)
+        smoothed = np.empty(data.shape, dtype=float)
         for i in range(data.shape[1]):
             series = pd.Series(data[:, i])
             smoothed[:, i] = series.rolling(window=window_size, min_periods=min_periods).mean().values

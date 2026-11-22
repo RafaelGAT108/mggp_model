@@ -32,6 +32,8 @@ def canonical_terms(individual) -> frozenset:
     coeficientes dos dois se somam). Por isso o custo é calculado sobre este conjunto,
     e não sobre a lista de genes.
     """
+    if getattr(individual, "multi_output", False):
+        return tuple(canonical_terms(equation) for equation in individual)
     return frozenset(gene_monomial(g) for g in individual)
 
 
@@ -47,6 +49,8 @@ def arithmetic_cost(individual, rho: float = RHO_OPS) -> float:
     Exemplo: theta_0 + theta_1*u(k) + theta_2*y(k-1)*u(k)  ->  p = 3, a = 2, b = 1 + 2 = 3,
     C = 5 (com rho = 1).
     """
+    if getattr(individual, "multi_output", False):
+        return sum(arithmetic_cost(equation, rho) for equation in individual)
     terms = canonical_terms(individual)    # termos não constantes, sem repetição (são p - 1)
     a = len(terms)                         # = p - 1 adições
     b = sum(sum(power for _, power in term) for term in terms)
