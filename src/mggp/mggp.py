@@ -6,8 +6,8 @@ from typing import Literal, Tuple, Optional, List
 import numpy as np
 from .base import Element, Individual
 import time
-import warnings
 import os
+import re
 from deap import tools
 from deap.tools import sortNondominated
 from copy import deepcopy
@@ -18,8 +18,6 @@ from tqdm.auto import tqdm
 from IPython.display import clear_output
 # from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 from collections import defaultdict
-import inspect
-warnings.filterwarnings("ignore")
 
 class MGGP:
 
@@ -111,24 +109,17 @@ class MGGP:
         self.phi_functions = phi_functions 
         self.operators = operators
         if self.evaluationMode not in ["MSE", "NMSE", "MAPE", "RMSE"]:
-            raise Exception("Choose a measure between:\n" +
+            raise ValueError("Choose a measure between:\n" +
                             "MSE, NMSE, MAPE, or RMSE")
 
-        if self.nInputs > 1 and self.nOutputs == 1:
-            self.mode = "MISO"
-
-        elif self.nInputs > 1 and self.nOutputs > 1:
-            self.mode = "MIMO" if mode == 'NARX' else mode
-
-        elif self.nInputs >= 1 and self.nOutputs > 1:
+        if self.nInputs == 0 or self.nOutputs == 0 or len(inputs) != len(outputs):
+            raise ValueError("Expected input and output channels with matching sample counts")
+        if mode == "FIR":
             self.mode = "FIR"
-
-        elif self.nInputs == 1 and self.nOutputs == 1:
-            self.mode = "SISO"
-
+        elif self.nOutputs > 1:
+            self.mode = "MIMO"
         else:
-            raise Exception("MGGP doesn't work with this system")
-            
+            self.mode = "SISO" if self.nInputs == 1 else "MISO"
 
         self.element = Element(weights=self.weights,
                                nDelays=self.nDelays,
@@ -148,12 +139,9 @@ class MGGP:
         self._mutList = []
         self._crossList = []
         self._stats = self._createStatistics()
-        self._logbook = tools.Logbook()
-        self._logbook.header = 'gen', 'evals', 'fitness'
-        self._logbook.chapters['fitness'].header = 'min', 'avg', 'max'
 
         self._hofSize = int(round(self.populationSize * (self.elitePercentage / 100)))
-        self._hof = tools.HallOfFame(self._hofSize)
+        self._hof = tools.HallOfFame(max(1, self._hofSize))
 
         if self.new_evaluation is not None:
             self._toolbox.register("select", tools.selTournamentDCD)
@@ -184,27 +172,16 @@ class MGGP:
         return "OSA"
 
 
-    def _call_with_align_if_supported(self, fn: callable, *args: tuple, align: str = ''):
-        """
-        Chama fn(*args, align=align) se o parâmetro existir.
-        Caso contrário, chama fn(*args).
-        """
-        try:
-            sig = inspect.signature(fn)
-            if "align" in sig.parameters:
-                return fn(*args)
-        except (TypeError, ValueError):
-            pass
-        return fn(*args)
-
-
-    def _yd_offset(self, eval_type: str) -> int:
-        """
-        FIR:
-        - OSA => yd = y[lagMax+1:]
-        - INSTANT => yd = y[lagMax:]
-        """
-        return 0 if (self.mode == "FIR" and eval_type == "INSTANT") else 1
+    def _fit_model(self, ind):
+        self.element.compileModel(ind)
+        if self.problem_type == "classification":
+            ind.logistic_model = True
+        if self.mode == "FIR":
+            ind.leastSquares(self.outputs, self.inputs, align=self._fir_align(self.evaluationType))
+        elif self.problem_type == "regression" and self.mode in ("SISO", "MISO") and "sign" in self.operators:
+            ind.hysteretic_constrained_ls(self.outputs, self.inputs)
+        else:
+            ind.leastSquares(self.outputs, self.inputs)
 
     def _delAttr(self, ind: Individual) -> None:
         """Remove atributos do indivíduo de forma segura"""
@@ -235,15 +212,24 @@ class MGGP:
     def stream(self) -> None:
         print(self._logbook.stream)
 
-    def initPop(self, seed: List = []) -> None:
-        if len(seed) > self.populationSize: raise Exception('Seed exceeds population size!')
+    def initPop(self, seed: Optional[List] = None) -> None:
+        seed = [] if seed is None else seed
+        if len(seed) > self.populationSize:
+            raise ValueError('Seed exceeds population size!')
 
-        if seed == []:
+        self._hof.clear()
+        self.fronts = []
+        self._logbook = tools.Logbook()
+        self._logbook.header = "gen", "evals", "fitness"
+        self._logbook.chapters["fitness"].header = "min", "avg", "max"
+        if not seed:
             self._pop = self.element._toolbox.population(self.populationSize)
 
         else:
             self._pop = self.element._toolbox.population(self.populationSize - len(seed))
-            self._pop.extend([seed])
+            for candidate in seed:
+                individual = self.element.buildModelFromList(candidate.model2List())
+                self._pop.append(individual)
 
         invalid_ind = [ind for ind in self._pop if not ind.fitness.valid]
 
@@ -260,26 +246,25 @@ class MGGP:
         for ind, fit in zip(invalid_ind, fitnesses):
             ind.fitness.values = fit
 
-        for ind in self._pop:
-            if not ind.fitness.valid:
-                if self.new_evaluation is not None:
-                    
-                    ind.fitness.values = (np.inf, np.inf)
-                else:
-                    ind.fitness.values = (np.inf,)
-
         record = {'fitness': self._stats.compile(self._pop)}
         self._logbook.record(gen=1, evals=len(invalid_ind), **record)
-        # print(self._logbook)
-        # self._hof.update(self._pop)
-        valid_ind = [ind for ind in self._pop if ind.fitness.valid]
+        valid_ind = [ind for ind in self._pop if finite(ind)]
+        if not valid_ind:
+            raise RuntimeError("No finite fitness in the initial population")
+        self._hof.update(valid_ind)
+        if self.new_evaluation is not None:
+            self._rank_population()
 
-        if len(valid_ind) > 0:
-            self._hof.update(valid_ind)
-        else:
-            raise RuntimeError("No valid individuals in initial population")
-
-
+    def _rank_population(self):
+        valid = []
+        for individual in self._pop:
+            if finite(individual):
+                valid.append(individual)
+            else:
+                individual.fitness.crowding_dist = -np.inf
+        self.fronts = sortNondominated(valid, k=len(valid))
+        for front in self.fronts:
+            tools.emo.assignCrowdingDist(front)
 
     def get_fitness_value(self, individual: Individual):
         return individual.fitness.values[0]
@@ -294,13 +279,23 @@ class MGGP:
 
 
     def step(self, gen_number: int) -> None:
-        if not self._pop:
-            raise Exception('Population must be initialized!')
+        if not getattr(self, "_pop", None):
+            raise RuntimeError('Population must be initialized!')
 
-        if self.new_evaluation is not None:
-            tools.emo.assignCrowdingDist(self._pop)
 
-        offspring = [deepcopy(ind) for ind in self._toolbox.select(self._pop, self.populationSize - self._hofSize)]
+        count = self.populationSize - self._hofSize
+        if self.new_evaluation is None:
+            parents = self._toolbox.select(self._pop, count)
+        else:
+            # DEAP draws DCD tournaments in blocks of four, even when k is smaller.
+            bulk = count - count % 4
+            parents = self._toolbox.select(self._pop, bulk)
+            if count > bulk:
+                pool = self._pop
+                if len(pool) < 4:
+                    pool = pool + random.choices(pool, k=4-len(pool))
+                parents += self._toolbox.select(pool, 4)[:count - bulk]
+        offspring = [deepcopy(ind) for ind in parents]
 
         for i in range(0, len(offspring) - 1, 2):
             if np.random.random() < self.crossoverRate:
@@ -327,32 +322,22 @@ class MGGP:
             self._pop = self._survive(self._pop + offspring, self.populationSize)
 
         else:
-            self._pop = self._hof.items + offspring
+            elites = self._hof.items[:self._hofSize]
+            # HallOfFame stores distinct genotypes and can be smaller than the quota.
+            missing = self.populationSize - len(offspring) - len(elites)
+            self._pop = elites + tools.selBest(self._pop, missing) + offspring
         
-        self._hof.update(self._pop)
+        self._hof.update([ind for ind in self._pop if finite(ind)])
 
         if self.new_evaluation is not None:
-            self.fronts = sortNondominated(self._pop, k=len(self._pop))
+            self._rank_population()
             models = self.fronts[0]
 
         else:
             models = [deepcopy(self._hof[0])]
 
         for i, model in enumerate(models):
-            self.element.compileModel(model)
-
-            if self.mode == "FIR":
-                align = self._fir_align(self.evaluationType)
-                theta_value = self._call_with_align_if_supported(model.leastSquares, self.outputs, self.inputs, align=align)
-            else:
-                if 'sign' in self.operators: 
-                    theta_value = model.hysteretic_constrained_ls(self.outputs, self.inputs)
-                
-                else:
-                    theta_value = model.leastSquares(self.outputs, self.inputs)
-
-            model.theta = list(theta_value)
-            
+            self._fit_model(model)
             os.makedirs("models_saved", exist_ok=True)
             self.save_model(model, filename=f"models_saved/{self.filename}_{i}.pkl")
             
@@ -380,64 +365,20 @@ class MGGP:
         return arguments
 
 
-    def evaluation(self, ind: Individual) -> tuple[float]:
+    @np.errstate(over="raise", divide="raise", invalid="raise")
+    def evaluation(self, ind: Individual) -> tuple[float, ...]:
         try:
-            self.element.compileModel(ind)
-
+            if self.problem_type == "regression" and self.froe_mode and np.random.random() < self.pruning_probability:
+                self.element.compileModel(ind)
+                self._apply_froe_pruning(ind)
+            self._fit_model(ind)
             if self.problem_type == 'regression':
-                
-                if self.froe_mode:
-                    
-                    # self._constrain_phi_functions(ind)
-        
-                    if np.random.random() < self.pruning_probability:
-                        self._apply_froe_pruning(ind)
-
-                    # theta_value = ind.hysteretic_constrained_ls(self.outputs, self.inputs)
-                    theta_value = ind.leastSquares(self.outputs, self.inputs)
-                    ind.theta = theta_value
-
-                    # if not self._check_hysteretic_constraints(ind):
-                    #     if self.new_evaluation is not None:
-                    #         return (np.inf, np.inf)
-                    #
-                    #     else:
-                    #         return (np.inf,)
-        
-                else:
-                    if self.mode == "FIR":
-                        align = self._fir_align(self.evaluationType)
-                        theta_value = self._call_with_align_if_supported(
-                            ind.leastSquares, self.outputs, self.inputs)
-                    else:
-                        
-                        theta_value = ind.leastSquares(self.outputs, self.inputs)
-
-                    ind.theta = theta_value
-
                 args = (self.outputs, self.inputs) if self.evaluationType != "MShooting" else (self.k, self.outputs, self.inputs)
                 yp, yd = ind.predict(self.evaluationType, *args)
                 error = ind.score(yd, yp, self.evaluationMode)
-                # complexity = sum([len(subtree) for tree in ind for subtree in tree])/1000
-                # fitness = error + complexity
-                if self.new_evaluation is not None:
+                score = error
 
-                    new_error = self.new_evaluation(ind)
-                    return (error, new_error)
-                
-                return error,
-            
             elif self.problem_type == 'classification':
-                ind.logistic_model = True
-                
-                if self.mode == "FIR":
-                    align = self._fir_align(self.evaluationType)  # "INSTANT" ou "OSA"
-                    theta_value = self._call_with_align_if_supported(ind.leastSquares, self.outputs, self.inputs)
-                else:
-                    theta_value = ind.leastSquares(self.outputs, self.inputs)
-                
-                ind.theta = theta_value
-                
                 args = (self.outputs, self.inputs) if self.evaluationType != "MShooting" else (self.k, self.outputs, self.inputs)
                 
                 if self.classification_metric == 'log_loss':
@@ -451,20 +392,18 @@ class MGGP:
                 if self.classification_metric in ['accuracy', 'f1_macro']:
                     score = 1 - score
                 
-                return score,
             
             else:
                 raise ValueError("problem_type must be 'regression' or 'classification'")
 
-        except (np.linalg.LinAlgError, ValueError, IndexError) as e:
-            if self.new_evaluation is not None:
-                return (np.inf, np.inf)
-            
-            else:
-                return (np.inf,)
+            fitness = (score,) if self.new_evaluation is None else (score, self.new_evaluation(ind))
+            if all(np.isfinite(value) for value in fitness):
+                return fitness
+        except (np.linalg.LinAlgError, FloatingPointError, ValueError, IndexError):
+            pass
+        return (np.inf,) * len(self.weights)
 
-
-    def run(self, seed: List = []) -> None:
+    def run(self, seed: Optional[List] = None) -> List[Individual]:
 
         print(f"System Mode: {self.mode}. N° Inputs: {self.nInputs}. N° Outputs: {self.nOutputs}")
         print(f"Input Samples: {len(self.inputs)}. Output Samples: {len(self.outputs)}\n")
@@ -474,8 +413,6 @@ class MGGP:
         init = time.time()
         self.initPop(seed=seed)
 
-        if self.new_evaluation is not None:
-            tools.emo.assignCrowdingDist(self._pop)
         
         self.stream()
         
@@ -496,7 +433,7 @@ class MGGP:
 
             if g%9 == 0:
                 # A cada 10 gerações, verifico se melhorou em 5%, se não, aumenta a taxa de mutação em 10% até o maximo de 90%
-                if (err_before/err_current -1)*100 < 5:
+                if err_before - err_current < 0.05 * err_current or err_before == err_current:
                     self.mutationRate = min(self.mutationRate+0.1, 0.9)
 
                 err_before = err_current
@@ -521,31 +458,13 @@ class MGGP:
         #    err_stop_before = err_stop_current
 
         if self.new_evaluation is not None:
-            self.fronts = sortNondominated(self._pop, k=len(self._pop))
             models = self.fronts[0]
 
         else:
             models = [self._hof[0]]
 
         for i, model in enumerate(models):
-            self.element.compileModel(model)
-
-            if self.mode == "FIR":
-                align = self._fir_align(self.evaluationType)
-                theta_value = self._call_with_align_if_supported(model.leastSquares, self.outputs, self.inputs, align=align)
-            else:
-                
-                if self.problem_type == "classification":
-                    model.logistic_model = True
-
-                if 'sign' in self.operators: 
-                    theta_value = model.hysteretic_constrained_ls(self.outputs, self.inputs)
-                
-                else:
-                    theta_value = model.leastSquares(self.outputs, self.inputs)
-
-            model.theta = list(theta_value)
-            
+            self._fit_model(model)
             os.makedirs("models_saved", exist_ok=True)
             self.save_model(model, filename=f"models_saved/{self.filename}_{i}.pkl")
             print(self.simplify_model(model))
@@ -557,7 +476,11 @@ class MGGP:
 
 
     def validation_all(self, model):
-        def make_validation(dataset_validation, dataset_value=1):
+        if self.validation is None or (isinstance(self.validation, tuple) and
+                                       all(item is None for item in self.validation)):
+            return
+
+        def make_validation(dataset_validation, dataset_value=0):
             if all([value is not None for value in dataset_validation]):
                 u_val, y_val = dataset_validation
 
@@ -601,7 +524,7 @@ class MGGP:
 
 
     def simplify_model(self, model) -> str:
-        equation = model.to_equation()
+        equation = model.to_equation(precision=17) if isinstance(model, Individual) else model.to_equation()
 
         lines = equation.split('\n')
         output_lines = []
@@ -624,26 +547,24 @@ class MGGP:
 
     def simplify_terms(self, terms) -> str:
       
-        term_dict = {}
+        coefficients = {}
         for term in terms:
-            if not term.strip():
-                continue
-            parts = term.split(' * ')
-            coeff = float(parts[0].strip(' +'))
-            term_part = ' * '.join(parts[1:]).strip()
-            
-            if term_part in term_dict:
-                term_dict[term_part] += coeff
-            else:
-                term_dict[term_part] = coeff
-        
-        simplified = []
-        for term_part, coeff in term_dict.items():
-            simplified.append(f"{coeff:.5e} * {term_part}")
-        
-        return '\n'.join(simplified)
-    
-    
+            if term.strip():
+                coefficient, _, expression = term.strip().rstrip("+ ").partition(" * ")
+                factors = expression.split(" * ")
+                if all(re.fullmatch(r"[uy]\d+\[k(?:-\d+)?\]", factor) for factor in factors):
+                    expression = " * ".join(sorted(factors))
+                coefficients[expression] = coefficients.get(expression, 0.0) + float(coefficient)
+
+        pieces = []
+        for expression, value in coefficients.items():
+            piece = f"{abs(value):.5e}"
+            if expression:
+                piece += f" * {expression}"
+            sign = ("- " if value < 0 else "+ ") if pieces else ("-" if value < 0 else "")
+            pieces.append(sign + piece)
+        return "\n".join(pieces)
+
     def load_model(self, path = None):
         """
         Load a saved model to use as seed
@@ -660,21 +581,35 @@ class MGGP:
             with open(path, 'rb') as f:
                 model_data = pickle.load(f)
 
+        mode = model_data.get("mode")
+        if mode is None:
+            arguments = model_data["arguments"].values()
+            if not any(argument.startswith("y") for argument in arguments):
+                mode = "FIR"
+            elif model_data["nOutputs"] > 1:
+                mode = "MIMO"
+            else:
+                mode = "MISO" if model_data["nInputs"] > 1 else "SISO"
+        primitives = {"operators": model_data["operators"]} if "operators" in model_data else {}
         element = Element(
-            weights=(-1,),
+            weights=model_data.get("weights", self.weights),
             nDelays=model_data['nDelays'],
             nInputs=model_data['nInputs'],
             nOutputs=model_data['nOutputs'],
             nTerms=model_data['nTerms'],
             maxHeight=model_data['maxHeight'],
-            mode=self.mode,
-            # operators=model_data.get('operators', None)
+            mode=mode,
+            **primitives,
         )
         element.renameArguments(model_data['arguments'])
         
         model = element.buildModelFromList(model_data['model_structure'])
         element.compileModel(model)
         model.theta = model_data['theta']
+        model.logistic_model = model_data.get("logistic_model", self.problem_type == "classification")
+        model.input_offset = model_data.get("input_offset", 0)
+        if model_data.get("fitness") is not None:
+            model.fitness.values = model_data["fitness"]
         
         return model
     
@@ -697,7 +632,12 @@ class MGGP:
             'maxHeight': self.maxHeight,
             'nDelays': self.nDelays,
             'arguments': self.buildArgumentsDict(),
-            'operators': self.operators 
+            'operators': self.operators,
+            'mode': self.mode,
+            'weights': model.fitness.weights,
+            'fitness': model.fitness.values if model.fitness.valid else None,
+            'logistic_model': model.logistic_model,
+            'input_offset': getattr(model, "input_offset", 0),
         }
         
         with open(filename, 'wb') as f:
@@ -712,6 +652,8 @@ class MGGP:
             clusters = ind.identify_term_clusters(self.outputs, self.inputs)
             theta = np.asarray(ind.theta).flatten() 
             
+            if abs(theta[0]) > tol or not np.all(np.isfinite(theta)):
+                return False
             linear_output_sum = sum(theta[idx] for idx in clusters['linear_output'])
             if abs(linear_output_sum - 1.0) > tol:
                 return False
@@ -859,65 +801,46 @@ class MGGP:
         Aplica o algoritmo FROE para remover termos com ERR baixo
         """
 
-        if self.mode == "FIR":
-
-            align = self._fir_align(self.evaluationType)
-            P = self._call_with_align_if_supported(ind.makeRegressors, self.outputs, self.inputs)
-            yd = self.outputs[ind.lagMax + self._yd_offset(self.evaluationType):]
-
+        align = self._fir_align(self.evaluationType)
+        matrices = ind.makeRegressors(self.outputs, self.inputs, align=align)
+        offset = int(ind.input_only and align == "OSA")
+        target = self.outputs[ind.lagMax + offset:]
+        if ind.multi_output:
+            for j, genes in enumerate(ind):
+                self._froe_pruning_miso(genes, matrices[j], target[:, j])
         else:
-            P = ind.makeRegressors(self.outputs, self.inputs)
-            yd = self.outputs[ind.lagMax + 1:]
-        
-        if self.mode in ["SISO", "MISO"] or (self.mode == "FIR" and self.nOutputs == 1):
-            self._froe_pruning_miso(ind, P, yd)
-        else:  # MIMO
-            self._froe_pruning_mimo(ind, P, yd)
+            self._froe_pruning_miso(ind, matrices, target[:, 0])
 
-
-    def _froe_pruning_miso(self, ind: Individual, P: NDArray, yd: NDArray) -> None:
-        """FROE para modelos MISO"""
-        n_terms = P.shape[1] - 1 
-        
-        err_values = []
-        for j in range(1, n_terms + 1): 
-            w_j = P[:, j] 
-            g_j = np.dot(w_j, yd) / np.dot(w_j, w_j)  
-            err_j = (g_j**2 * np.sum(w_j**2)) / np.sum(yd**2)  # ERR
-            err_values.append((j, err_j))
-        
-        err_values.sort(key=lambda x: x[1], reverse=True)
-        terms_to_keep = [0] 
-        
-        for j, err in err_values:
-            if err >= self.pruning_tolerance:  
-                terms_to_keep.append(j)
-            else:
-                if (j-1) < len(ind):
-                    ind[j-1] = self.element._toolbox._program() 
-        
-        new_ind = []
-        for i in range(len(ind)):
-            if i in [x-1 for x in terms_to_keep if x > 0]:
-                new_ind.append(ind[i])
-        
-        ind[:] = new_ind
+    def _froe_pruning_miso(self, genes, P: NDArray, yd: NDArray) -> None:
+        """Filter genes by their existing marginal error-reduction ratio."""
+        y = np.asarray(yd).ravel()
+        terms = P[:, 1:]
+        denominator = (y @ y) * np.sum(terms * terms, axis=0)
+        err = np.divide((terms.T @ y) ** 2, denominator,
+                        out=np.zeros(len(genes)), where=denominator > 0)
+        genes[:] = [gene for gene, score in zip(genes, err) if score >= self.pruning_tolerance]
 
     def _survive(self, pool, n):
-            # Escolha dos SOBREVIVENTES entre pais + filhos (elitismo do NSGA-II).
-            # Antes, separo as estruturas repetidas: se dois indivíduos têm os mesmos termos,
-            # só um conta como "único". Sem isso a população se enche de cópias do mesmo modelo.
-            valid = [ind for ind in pool if finite(ind)]
-            unique, repeated, seen = [], [], set()
-            for ind in valid:
+        valid = [ind for ind in pool if finite(ind)]
+        unique, repeated, positions = [], [], {}
+        for ind in valid:
+            try:
                 key = canonical_terms(ind)
-                (repeated if key in seen else unique).append(ind)
-                seen.add(key)
-            if len(unique) >= n:
-                return tools.selNSGA2(unique, n)
-            # Se não houver estruturas diferentes suficientes, completo com as repetidas
-            # e, só em último caso, com as que divergiram.
-            need = n - len(unique)
-            fill = tools.selNSGA2(repeated, min(need, len(repeated))) if repeated else []
-            invalid = [ind for ind in pool if not finite(ind)]
-            return unique + fill + invalid[: need - len(fill)]
+            except ValueError:
+                # A custom objective can use primitives outside the polynomial grammar.
+                genes = ind.model2List()
+                key = tuple(tuple(eq) for eq in genes) if ind.multi_output else tuple(genes)
+            if key not in positions:
+                positions[key] = len(unique)
+                unique.append(ind)
+            else:
+                i = positions[key]
+                if ind.fitness.dominates(unique[i].fitness):
+                    unique[i], ind = ind, unique[i]
+                repeated.append(ind)
+        if len(unique) >= n:
+            return tools.selNSGA2(unique, n)
+        need = n - len(unique)
+        fill = tools.selNSGA2(repeated, min(need, len(repeated))) if repeated else []
+        invalid = [ind for ind in pool if not finite(ind)]
+        return unique + fill + invalid[:need - len(fill)]
