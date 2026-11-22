@@ -2,3 +2,4 @@
 deap>=1.4
 tqdm>=4.67
 ipython>=8.37.0
+scikit-learn
