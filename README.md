@@ -296,40 +296,6 @@ Pass the callable `make_cost` to `new_evaluation`. MGGP calls it for each indivi
 
 For products and delay operators, `make_cost` counts one addition per distinct nonconstant monomial and one multiplication per factor, including multiplication by its coefficient. For example, `b + a*u[k] + c*u[k]*y[k-1]` costs two additions and three multiplications, for a cost of five. Reordering factors or repeating a gene leaves that cost unchanged. For a different objective, supply a function taking an individual and returning one numeric cost to minimize.
 
-## 3. Inspect the Pareto front and validate its models
-
-```python
-rows = []
-for index, model in enumerate(models):
-    training_rmse, cost = model.fitness.values
-    prediction, reference = model.predict("FreeRun", y_val, u_val)
-    rows.append({
-        "model": index,
-        "training_rmse": training_rmse,
-        "arithmetic_cost": cost,
-        "validation_rmse": model.score(reference, prediction, "RMSE"),
-    })
-results = pd.DataFrame(rows).sort_values(["arithmetic_cost", "training_rmse"])
-print(results.to_string(index=False))
-
-plt.scatter(results["training_rmse"], results["arithmetic_cost"])
-plt.xlabel("Training RMSE (multiple shooting)")
-plt.ylabel("Arithmetic cost")
-plt.grid(alpha=0.3)
-plt.tight_layout()
-plt.show()
-
-tolerance = 1e-10  # absolute RMSE, in the units of this noise-free output
-eligible = results[results["validation_rmse"] <= results["validation_rmse"].min() + tolerance]
-index = int(eligible.sort_values(["arithmetic_cost", "validation_rmse"]).iloc[0]["model"])
-selected = models[index]
-print(mggp.simplify_model(selected))
-# Reload the same candidate in a later session with the matching MGGP instance.
-reloaded = mggp.load_model(f"models_saved/pareto_regression_{index}.pkl")
-```
-
-Each point belongs to the first non-dominated front of the **final population**. A point dominates another if it is at least as good on both objectives and strictly better on one. The validation column measures simulation from the initial history of the held-out sequence. The example selects the lowest-cost model within an absolute tolerance of the best validation RMSE. For measured data, choose a tolerance consistent with the output resolution. Use a separate test sequence for a final performance estimate after selection.
-
 ---
 
 ## Important Hyperparameters
