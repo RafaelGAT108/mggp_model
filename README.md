@@ -1,6 +1,6 @@
-_# MGGP (Multigene Genetic Programming)
+# MGGP (Multigene Genetic Programming)
 
-[![Version](https://img.shields.io/badge/version-0.1.0-blue.svg)](https://github.com/RafaelGAT108/mggp_model/releases/tag/v0.1.0)
+[![Version](https://img.shields.io/badge/version-0.2.0-blue.svg)](https://github.com/RafaelGAT108/mggp_model/releases/tag/v0.2.0)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![codecov](https://codecov.io/gh/RafaelGAT108/mggp_model/branch/main/graph/badge.svg)](https://codecov.io/gh/RafaelGAT108/mggp_model)
 
