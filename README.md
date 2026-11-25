@@ -1,4 +1,4 @@
-# MGGP (Multigene Genetic Programming)
+_# MGGP (Multigene Genetic Programming)
 
 [![Version](https://img.shields.io/badge/version-0.1.0-blue.svg)](https://github.com/RafaelGAT108/mggp_model/releases/tag/v0.1.0)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
@@ -19,17 +19,14 @@ The package supports:
 
 ## Installation
 
-Install the package using the PIPL command:
+From the unpacked source directory, install the runtime dependencies and add `src` to the Python path.
 
 ```bash
-pip install mggpy
+python -m pip install -r requirements.txt
+export PYTHONPATH="$PWD/src"
 ```
 
-After installation, the package can be imported as:
-
-```python
-from mggpy import MGGP
-```
+In PowerShell use `$env:PYTHONPATH = (Resolve-Path src).Path`. The source package imports as `from mggp import MGGP`. The plotting examples use Matplotlib. Tutorial 3 also uses pandas. Both are included in the test dependencies below.
 
 ---
 
@@ -61,10 +58,12 @@ The goal is to recover an equation that predicts `y` from the input `u` and past
 ## 1. Generate synthetic data
 
 ```python
+import random
 import numpy as np
 import matplotlib.pyplot as plt
 from mggp import MGGP
 
+random.seed(42)
 np.random.seed(42)
 
 n_samples = 300
@@ -114,7 +113,7 @@ The example above uses a small population and few generations so it can run quic
 ## 3. Load the Best Model and Inspect the Symbolic Equation
 
 ```python
-best_model = mggp.load_model("best_mggp_regression.pkl")
+best_model = mggp.load_model()
 
 print("Identified equation:")
 print(mggp.simplify_model(best_model))
@@ -167,9 +166,11 @@ For classification, MGGP expects the output matrix in one-hot format.
 ## 1. Generate a Synthetic Classification Dataset
 
 ```python
+import random
 import numpy as np
 from mggp import MGGP
 
+random.seed(42)
 np.random.seed(42)
 rng = np.random.default_rng(42)
 
@@ -228,8 +229,7 @@ def sample_accuracy(y_true_onehot, y_pred_onehot):
     pred_labels = np.argmax(y_pred_onehot, axis=1)
     return np.mean(true_labels == pred_labels)
 
-best_model = mggp.load_model("best_mggp_classifier.pkl")
-best_model.logistic_model = True
+best_model = mggp.load_model()
 
 Y_pred, Y_true = best_model.predict_classes("INSTANT", Y_test, X_test)
 acc = sample_accuracy(Y_true, Y_pred)
@@ -239,30 +239,93 @@ print("Identified classifier equations:")
 print(mggp.simplify_model(best_model))
 ```
 
-```txt
-Test accuracy: 0.8621
-Identified classifier equations:
-Output 1:
-2.28724e-01 * 
--5.11180e-01 * u1[k] +
-4.11911e-01 * u2[k] * u2[k] * u1[k] +
-5.92781e-02 * u1[k-1] +
--4.67605e-01 * u2[k] +
-1.78701e-01 * u1[k-1] * u1[k-1] +
-Output 2:
-5.59953e-01 * 
--2.72496e-03 * u2[k] +
--4.86901e-02 * u2[k-2] +
--3.18587e-01 * u1[k] * u1[k] +
--2.19767e-02 * u1[k] +
--1.02813e+00 * u2[k] * u1[k] +
-Output 3:
-2.84758e-01 * 
-4.77110e-01 * u1[k] +
-3.63570e-01 * u2[k] +
-
-```
 The classifier internally builds one symbolic expression per output class. The predicted class can be obtained with `argmax` over the one-hot output.
+
+----
+
+# Tutorial 3 — Multiobjective symbolic regression
+
+The [regression notebook](Tutorial_regression.ipynb) fits the nonlinear SISO system from Tutorial 1 with two objectives. The first is training RMSE in multiple shooting. The second is the arithmetic cost of the polynomial. Both are minimized. The returned Pareto front can contain a simpler model with a larger error and a more accurate model with more operations.
+
+## 1. Generate the data and preserve time order
+
+Run these blocks in order with NumPy, pandas and Matplotlib installed.
+
+```python
+import random
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from mggp import MGGP
+from mggp.utils import make_cost
+
+random.seed(42)
+np.random.seed(42)
+t = np.linspace(0, 20, 300)
+u = (np.sin(t) + 0.25 * np.sin(3 * t)).reshape(-1, 1)
+y = np.zeros_like(u)
+for k in range(1, len(u)):
+    y[k, 0] = (0.65 * y[k-1, 0] + 0.35 * u[k, 0]
+               + 0.10 * u[k, 0] * y[k-1, 0])
+
+split = int(0.70 * len(u))
+u_train, u_val = u[:split], u[split:]
+y_train, y_val = y[:split], y[split:]
+```
+
+## 2. Train with error and complexity as separate objectives
+
+```python
+mggp = MGGP(
+    inputs=u_train, outputs=y_train, validation=(u_val, y_val),
+    problem_type="regression", mode="NARX",
+    evaluationMode="RMSE", evaluationType="MShooting",
+    evaluationTypeTest="FreeRun", k=20,
+    nTerms=5, maxHeight=2, nDelays=2, operators=["mul"],
+    generations=50, populationSize=100, mutationRate=0.2,
+    crossoverRate=0.9, elitePercentage=10, new_evaluation=make_cost,
+    filename="pareto_regression",
+)
+models = mggp.run()
+```
+
+Pass the callable `make_cost` to `new_evaluation`. MGGP calls it for each individual and stores `(training_rmse, arithmetic_cost)` in `individual.fitness.values`. Selection uses non-dominated sorting and crowding distance, with a preference for distinct polynomial structures during survival.
+
+For products and delay operators, `make_cost` counts one addition per distinct nonconstant monomial and one multiplication per factor, including multiplication by its coefficient. For example, `b + a*u[k] + c*u[k]*y[k-1]` costs two additions and three multiplications, for a cost of five. Reordering factors or repeating a gene leaves that cost unchanged. For a different objective, supply a function taking an individual and returning one numeric cost to minimize.
+
+## 3. Inspect the Pareto front and validate its models
+
+```python
+rows = []
+for index, model in enumerate(models):
+    training_rmse, cost = model.fitness.values
+    prediction, reference = model.predict("FreeRun", y_val, u_val)
+    rows.append({
+        "model": index,
+        "training_rmse": training_rmse,
+        "arithmetic_cost": cost,
+        "validation_rmse": model.score(reference, prediction, "RMSE"),
+    })
+results = pd.DataFrame(rows).sort_values(["arithmetic_cost", "training_rmse"])
+print(results.to_string(index=False))
+
+plt.scatter(results["training_rmse"], results["arithmetic_cost"])
+plt.xlabel("Training RMSE (multiple shooting)")
+plt.ylabel("Arithmetic cost")
+plt.grid(alpha=0.3)
+plt.tight_layout()
+plt.show()
+
+tolerance = 1e-10  # absolute RMSE, in the units of this noise-free output
+eligible = results[results["validation_rmse"] <= results["validation_rmse"].min() + tolerance]
+index = int(eligible.sort_values(["arithmetic_cost", "validation_rmse"]).iloc[0]["model"])
+selected = models[index]
+print(mggp.simplify_model(selected))
+# Reload the same candidate in a later session with the matching MGGP instance.
+reloaded = mggp.load_model(f"models_saved/pareto_regression_{index}.pkl")
+```
+
+Each point belongs to the first non-dominated front of the **final population**. A point dominates another if it is at least as good on both objectives and strictly better on one. The validation column measures simulation from the initial history of the held-out sequence. The example selects the lowest-cost model within an absolute tolerance of the best validation RMSE. For measured data, choose a tolerance consistent with the output resolution. Use a separate test sequence for a final performance estimate after selection.
 
 ---
 
@@ -282,6 +345,7 @@ The classifier internally builds one symbolic expression per output class. The p
 | `evaluationType` | Training predictor: `OSA`, `MShooting`, `FreeRun`, or `INSTANT`. |
 | `evaluationTypeTest` | Validation/test predictor. For dynamic regression, `FreeRun` is commonly used to evaluate simulation quality. |
 | `mode` | Model formulation. Use `NARX` for dynamic regression and `FIR` for static/instant input-output mapping. |
+| `new_evaluation` | Optional callable that supplies a second objective to minimize, such as `make_cost` for polynomial complexity. |
 | `operators` | Primitive operators used to construct symbolic terms, such as `mul`, `add`, `subtraction`, `sin`, `div`, `tanh`, and `sign`. |
 
 ---
@@ -329,10 +393,13 @@ mggp_model/
 │       ├── mggp.py
 │       ├── mutations.py
 │       ├── predictors.py
+│       ├── utils.py
 │       └── __init__.py
 ├── tests/
 ├── requirements.txt
-├── pyproject.toml
+├── requirements-test.txt
+├── utils/
+├── Tutorial_regression.ipynb
 └── README.md
 ```
 
