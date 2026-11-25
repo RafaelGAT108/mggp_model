@@ -19,14 +19,17 @@ The package supports:
 
 ## Installation
 
-From the unpacked source directory, install the runtime dependencies and add `src` to the Python path.
+Install the package using the PIPL command:
 
 ```bash
-python -m pip install -r requirements.txt
-export PYTHONPATH="$PWD/src"
+pip install mggpy
 ```
 
-In PowerShell use `$env:PYTHONPATH = (Resolve-Path src).Path`. The source package imports as `from mggp import MGGP`. The plotting examples use Matplotlib. Tutorial 3 also uses pandas. Both are included in the test dependencies below.
+After installation, the package can be imported as:
+
+```python
+from mggpy import MGGP
+```
 
 ---
 
