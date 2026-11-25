@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mggpy"
-version = "0.1.0"
+version = "0.2.0"
 description = "Multi-Gene Genetic Programming for system identification and regression"
 
 license = {text = "MIT"}
@@ -19,6 +19,8 @@ dependencies = [
     "numpy>=1.26",
     "deap>=1.4",
     "tqdm>=4.67",
+    "ipython>=8.37.0",
+    "scikit-learn"
 ]
 
 [tool.setuptools.packages.find]
