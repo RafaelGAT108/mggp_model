@@ -5,6 +5,7 @@ from numpy.typing import NDArray
 from typing import Literal, Tuple, Optional, List
 import numpy as np
 from .base import Element, Individual
+from .predictors import _label_vector
 import time
 import os
 import re
@@ -48,6 +49,7 @@ class MGGP:
                  phi_functions: List[str] = ['subtraction', 'sign'],  
                  operators: List[str] = ['mul'],   
                  new_evaluation: callable = None,
+                 classification_encoding: Literal['one_hot', 'label'] = 'one_hot',
                  **kwargs):
         """
         Args:
@@ -69,6 +71,7 @@ class MGGP:
             elitePercentage (int): Percentile of population to be kept in the next generation.
             problem_type (Literal['regression', 'classification']): problem type ('regression' or 'classification')
             classification_metric (Literal['accuracy', 'log_loss', 'f1_macro']): Metric for evaluation in classification problem type
+            classification_encoding: 'one_hot' fits one equation per class. 'label' fits one equation to ordered class codes.
         """
 
         self.inputs = inputs
@@ -101,7 +104,44 @@ class MGGP:
         self.filename = filename
         self.problem_type = problem_type
         self.classification_metric = classification_metric
+        self.classification_encoding = classification_encoding
+        self.classes_ = None
         self.nInputs = self.inputs.shape[1]
+
+        if classification_encoding not in ("one_hot", "label"):
+            raise ValueError("Choose one_hot or label for classification_encoding")
+
+        if classification_encoding == "label":
+
+            if problem_type != "classification":
+                raise ValueError("Label encoding requires problem_type='classification'")
+
+            labels = _label_vector(outputs)
+
+            if labels.dtype.kind == "O":
+                labels = np.asarray(labels.tolist())
+
+            if labels.dtype.kind not in "biufSU":
+                raise ValueError("Use numbers or strings for class labels")
+
+            self.classes_ = np.unique(labels)
+
+            if len(self.classes_) < 2:
+                raise ValueError("Label classification needs at least two classes in the training data")
+
+            if labels.dtype.kind == "f" and not np.isfinite(self.classes_).all():
+                raise ValueError("Training class labels must be finite")
+
+            self.outputs = labels[:, None]
+
+        elif problem_type == "classification":
+
+            self.outputs = np.asarray(outputs)
+
+            if self.outputs.ndim != 2 or self.outputs.shape[1] < 2:
+                raise ValueError("Expected one-hot outputs with one column per class. "
+                                 "For a single vector of labels use classification_encoding='label'")
+
         self.nOutputs = self.outputs.shape[1]
         self.froe_mode = froe_mode
         self.pruning_probability = pruning_probability
@@ -176,6 +216,7 @@ class MGGP:
         self.element.compileModel(ind)
         if self.problem_type == "classification":
             ind.logistic_model = True
+            ind.classes_ = self.classes_
         if self.mode == "FIR":
             ind.leastSquares(self.outputs, self.inputs, align=self._fir_align(self.evaluationType))
         elif self.problem_type == "regression" and self.mode in ("SISO", "MISO") and "sign" in self.operators:
@@ -484,6 +525,9 @@ class MGGP:
             if all([value is not None for value in dataset_validation]):
                 u_val, y_val = dataset_validation
 
+                if self.classification_encoding == "label":
+                    y_val = _label_vector(y_val)[:, None]
+
                 if u_val.shape[1] != self.nInputs:
                     raise Exception("The number of inputs to validate and to train must be the same")
 
@@ -607,6 +651,7 @@ class MGGP:
         element.compileModel(model)
         model.theta = model_data['theta']
         model.logistic_model = model_data.get("logistic_model", self.problem_type == "classification")
+        model.classes_ = model_data.get("classes_")
         model.input_offset = model_data.get("input_offset", 0)
         if model_data.get("fitness") is not None:
             model.fitness.values = model_data["fitness"]
@@ -639,6 +684,9 @@ class MGGP:
             'logistic_model': model.logistic_model,
             'input_offset': getattr(model, "input_offset", 0),
         }
+
+        if getattr(model, "classes_", None) is not None:
+            model_data["classes_"] = model.classes_
         
         with open(filename, 'wb') as f:
             pickle.dump(model_data, f)
