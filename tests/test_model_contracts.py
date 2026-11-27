@@ -87,12 +87,15 @@ def test_shooting_classifier_returns_rowwise_probabilities_and_two_objectives():
     m = e.element.buildModelFromList([["u1"], ["u1"]])
     loss, cost = e.evaluation(m)
     probs, yd = m.predict_proba("MShooting", 4, y, u)
-    expected = np.where(y[:8] == 1, np.e/(np.e+1), 1/(np.e+1))
-    np.testing.assert_allclose(probs, expected, atol=1e-12)
+    expected = np.where(y == 1, np.e/(np.e+1), 1/(np.e+1))
+    np.testing.assert_allclose(probs, expected[:8], atol=1e-12)
     np.testing.assert_array_equal(yd, y[:8])
     assert loss == pytest.approx(np.log1p(1/np.e)) and cost == 4
+    osa_probs, osa_targets = m.predict_proba("OSA", y, u)
+    np.testing.assert_allclose(osa_probs, expected, atol=1e-12)
+    np.testing.assert_array_equal(osa_targets, y)
     with pytest.raises(ValueError, match="classification"):
-        m.predict_proba("OSA", y, u)
+        m.predict_proba("unknown", y, u)
 
 
 def test_population_restart_reevaluates_seeds_and_resets_the_archive():
