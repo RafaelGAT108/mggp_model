@@ -12,6 +12,7 @@ import numpy as np
 import re
 from .predictors import miso_OSA, miso_FreeRun, miso_MShooting, mimo_CLASSIFY, miso_FIR_INSTANT, mimo_FIR_INSTANT, miso_CLASSIFY
 from .predictors import mimo_OSA, mimo_FreeRun, mimo_MShooting, mimo_FIR_MShooting, mimo_FIR_FreeRun
+from .predictors import _class_probabilities, _encode_labels, _nearest_codes
 import warnings
 from threading import Lock
 
@@ -116,6 +117,7 @@ def log_loss(y_true, y_pred, eps=1e-15):
 class Individual(list):
     input_only = False
     multi_output = False
+    classes_ = None
 
     def __init__(self, data: List = []):
         super().__init__(data)
@@ -132,23 +134,37 @@ class Individual(list):
         u = np.asarray(u)
         y = y.reshape(-1, 1) if y.ndim == 1 else y
         u = u.reshape(-1, 1) if u.ndim == 1 else u
+
         if len(y) != len(u):
             raise ValueError("Inputs and outputs must have the same number of samples")
+
         if self.multi_output and y.shape[1] != len(self):
             raise ValueError("Wrong number of output channels")
+
         if not self.multi_output and y.shape[1] != 1:
             raise ValueError("Expected a single output channel")
+
         if align not in ("OSA", "INSTANT"):
             raise ValueError("Unknown regressor alignment")
 
         input_shift = int(self.input_only and align == "OSA")
         start = self.lagMax + input_shift
+
         if start >= len(y):
             raise ValueError("Not enough samples for the chosen lag or alignment")
         variables = []
+
         if not self.input_only:
             # At row k an output terminal means y[k-1].
-            variables.extend(np.roll(y[:, j:j+1], 1, axis=0) for j in range(y.shape[1]))
+
+            if self.classes_ is not None:
+                previous = np.zeros((len(y), 1))
+                previous[1:, 0] = _encode_labels(y[:-1], self.classes_)
+                variables.append(previous)
+
+            else:
+                variables.extend(np.roll(y[:, j:j+1], 1, axis=0) for j in range(y.shape[1]))
+
         inputs = np.roll(u, input_shift, axis=0) if input_shift else u
         variables.extend(inputs[:, j:j+1] for j in range(inputs.shape[1]))
 
@@ -161,20 +177,32 @@ class Individual(list):
             return [design(genes) for genes in self.funcs]
         return design(self.funcs)
 
+
     def leastSquares(self, y: NDArray, u: NDArray, align: str = "OSA"):
+
         matrices = self.makeRegressors(y, u, align=align)
         self.input_offset = int(self.input_only and align == "OSA")
         target = np.asarray(y)[self.lagMax + self.input_offset:]
+
+        if self.classes_ is not None:
+            target = _encode_labels(target, self.classes_)
+
         if not self.multi_output:
+
             solver = theta_fir if self.input_only else theta_miso
             self.theta = solver(matrices, target).reshape(-1, 1)
+
         else:
+
             coefficients = [theta_mimo(p, target[:, j])
                             for j, p in enumerate(matrices)]
+
             if len({len(theta) for theta in coefficients}) == 1:
                 self.theta = np.stack(coefficients)
+
             else:
                 self.theta = coefficients
+
         return self.theta
 
 
@@ -190,12 +218,16 @@ class Individual(list):
         S = np.atleast_2d(constraints["S"])
         c = np.asarray(constraints["c"]).reshape(-1, 1)
         particular = np.linalg.lstsq(S, c, rcond=None)[0]
+
         if not np.allclose(S @ particular, c):
             raise ValueError("Inconsistent coefficient constraints")
+
         _, _, vt = np.linalg.svd(S, full_matrices=True)
         null_space = vt[np.linalg.matrix_rank(S):].T
         adjustment = np.linalg.lstsq(p @ null_space, yd - p @ particular, rcond=None)[0]
+
         self.theta = particular + null_space @ adjustment
+
         return self.theta
 
     def identify_term_clusters(self, y: NDArray, u: NDArray) -> dict:
@@ -246,17 +278,25 @@ class Individual(list):
 
 
     def _classify_term(self, term_index: int) -> str:
+
         if term_index == 0:
             return "bias"
+
         tree = self[term_index - 1]
+
         if any(self._node_is_phi(node) for node in tree):
             return "phi_terms"
+
         variables = {str(node.value)[0] for node in tree if isinstance(node, gp.Terminal)}
+
         if variables == {"u", "y"}:
             return "cross_terms"
+
         variable, = variables
+
         if all(isinstance(node, gp.Terminal) or self._node_is_q(node) for node in tree):
             return "linear_output" if variable == "y" else "linear_input"
+
         return "nonlinear_y" if variable == "y" else "nonlinear_u"
 
     def hysteretic_constrained_ls(self, y: NDArray, u: NDArray) -> NDArray:
@@ -308,26 +348,55 @@ class Individual(list):
 
         return self.constrained_least_squares(y, p, {"S": S, "c": c})
 
-    def predict_proba(self, mode: str = "INSTANT", *args: tuple):
-        """Return row-wise softmax probabilities and their aligned targets."""
+    def _classification_scores(self, mode, *args):
+
         if not self.logistic_model:
             raise ValueError("Classification model has not been trained")
+
         if mode == "INSTANT":
             scores, targets = mimo_CLASSIFY(self, *args)
-        elif mode == "MShooting":
+
+        elif mode in ("OSA", "FreeRun", "MShooting"):
             scores, targets = self.predict(mode, *args)
+
         else:
-            raise ValueError("Choose INSTANT or MShooting for classification")
-        exp_scores = np.exp(scores - scores.max(axis=1, keepdims=True))
-        return exp_scores / exp_scores.sum(axis=1, keepdims=True), targets
+            raise ValueError("Choose INSTANT, OSA, FreeRun or MShooting for classification")
+
+        if self.classes_ is not None:
+            targets = targets[:, 0]
+
+        return scores, targets
+
+    def predict_proba(self, mode: str = "INSTANT", *args: tuple):
+        """Return one probability per class and the aligned targets in their original encoding."""
+
+        scores, targets = self._classification_scores(mode, *args)
+
+        return _class_probabilities(scores, self.classes_), targets
 
     def predict_classes(self, mode: str = "INSTANT", *args: tuple):
+
+        if self.classes_ is not None:
+            scores, targets = self._classification_scores(mode, *args)
+            return self.classes_[_nearest_codes(scores, len(self.classes_))], targets
+
         probabilities, targets = self.predict_proba(mode, *args)
         labels = probabilities.argmax(axis=1)
+
         return np.eye(probabilities.shape[1])[labels], targets
 
     def score_classification(self, yd: NDArray, yp: NDArray, mode: str ="accuracy") -> float:
         """Métricas de avaliação para classificação"""
+        if self.classes_ is not None:
+
+            yd = _encode_labels(yd, self.classes_)
+
+            if mode == "log_loss":
+                if np.shape(yp) != (len(yd), len(self.classes_)):
+                    raise ValueError("Expected one probability column per training class")
+
+            else:
+                yp = _encode_labels(yp, self.classes_)
         
         if mode == "accuracy":
             return accuracy_score(yd, yp)
@@ -337,7 +406,12 @@ class Individual(list):
             return log_loss(yd, yp)
         
         elif mode == "f1_macro":
+
             from sklearn.metrics import f1_score
+
+            if self.classes_ is not None:
+                return f1_score(yd, yp, labels=np.arange(len(self.classes_)), average='macro', zero_division=0)
+
             return f1_score(yd, yp, average='macro')
         
         else:
